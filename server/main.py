@@ -1,9 +1,12 @@
 import copy
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from server.services.posting_allocator import allocate_timetable
 from server.services.postprocess import compute_postprocess
@@ -27,6 +30,7 @@ store = Store()
 app = FastAPI(title="R2S API")
 
 # configure CORS middleware
+# Allow localhost for development and Replit domains for preview/deployment
 origins = [
     "http://localhost:5173",
     "http://localhost:5000",
@@ -35,6 +39,7 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://.*\.(replit\.dev|repl\.co)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -270,3 +275,10 @@ async def download_csv(payload: Dict[str, Any] = Body(...)):
             "Content-Disposition": 'attachment; filename="final_timetable.csv"',
         },
     )
+
+
+# Mount static files for production deployment
+# Check if the client/dist directory exists (production mode)
+client_dist_path = Path(__file__).parent.parent / "client" / "dist"
+if client_dist_path.exists() and client_dist_path.is_dir():
+    app.mount("/", StaticFiles(directory=str(client_dist_path), html=True), name="static")
