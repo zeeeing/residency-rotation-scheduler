@@ -55,11 +55,7 @@ localPort = 8000
 externalPort = 8000
 exposeLocalhost = true
 
-[[ports]]
-localPort = 44507
-externalPort = 3000
-
 [deployment]
 deploymentTarget = "vm"
 run = ["bash", "-c", "uvicorn server.main:app --host 0.0.0.0 --port 5000"]
-build = ["bash", "-c", "cd client && npm install && npm run build"]
+build = ["bash", "-c", "npm install --prefix client && npm run build --prefix client"]
