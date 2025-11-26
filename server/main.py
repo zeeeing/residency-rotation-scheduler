@@ -278,19 +278,42 @@ async def download_csv(payload: Dict[str, Any] = Body(...)):
 
 
 # Static files and SPA routing for production deployment
-client_dist_path = Path(__file__).parent.parent / "client" / "dist"
-if client_dist_path.exists() and client_dist_path.is_dir():
-    # Serve static assets (JS, CSS, images) from /assets
-    assets_path = client_dist_path / "assets"
-    if assets_path.exists():
-        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+_client_dist_path = Path(__file__).parent.parent / "client" / "dist"
+_assets_path = _client_dist_path / "assets"
+
+# Mount assets directory if it exists (for production)
+if _assets_path.exists() and _assets_path.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
+
+
+@app.get("/")
+async def serve_index():
+    """Serve the main index.html for the SPA."""
+    index_file = _client_dist_path / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"message": "R2S API", "docs": "/docs"}
+
+
+@app.get("/{path:path}")
+async def serve_static_or_spa(path: str):
+    """Serve static files or fallback to SPA index.html."""
+    # Skip API paths - they should 404 if not matched by explicit routes
+    if path.startswith("api"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
     
-    # Serve other static files from root (favicon, etc)
-    @app.get("/{path:path}")
-    async def serve_spa(path: str):
-        # Check if the file exists in dist
-        file_path = client_dist_path / path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        # Otherwise serve index.html for SPA routing
-        return FileResponse(client_dist_path / "index.html")
+    # Check if client dist exists (production mode)
+    if not _client_dist_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Try to serve the exact file if it exists
+    file_path = _client_dist_path / path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    
+    # Fallback to index.html for SPA routing
+    index_file = _client_dist_path / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    
+    raise HTTPException(status_code=404, detail="Not found")
