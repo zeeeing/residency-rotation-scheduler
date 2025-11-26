@@ -1,0 +1,7 @@
+{
+  "name": "r2s-root",
+  "private": true,
+  "scripts": {
+    "build": "cd client && npm install && npm run build"
+  }
+}
