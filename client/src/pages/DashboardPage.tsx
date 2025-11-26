@@ -104,14 +104,21 @@ const HomePage: React.FC = () => {
 
     try {
       const json: ApiResponse = await solve(formData);
+      console.log("API Response:", json);
       if (json.success && json.residents) {
         setApiResponse(json);
+      } else {
+        setError(
+          `Server returned success=${json?.success}, residents count=${json?.residents?.length ?? 0}`
+        );
       }
     } catch (err: any) {
-      setError(
+      console.error("API Error:", err);
+      const errorMessage = 
         err?.response?.data?.detail ||
-          "An error occurred while processing the files."
-      );
+        err?.message ||
+        "An error occurred while processing the files.";
+      setError(errorMessage);
     } finally {
       setIsProcessing(false);
     }
