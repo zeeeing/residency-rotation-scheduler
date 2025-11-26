@@ -8,11 +8,13 @@ Residency Rotation Scheduler is a constraint-based optimization tool that uses G
 
 **November 26, 2025** - Initial Replit setup
 - Configured Python 3.11 and Node.js 20 environments
-- Installed backend dependencies (FastAPI, OR-Tools, pandas, uvicorn)
+- Installed backend dependencies (FastAPI, OR-Tools, pandas, uvicorn, aiofiles)
 - Installed frontend dependencies (React, Vite, Tailwind CSS)
-- Configured Vite to run on port 5000 with 0.0.0.0 host for Replit compatibility
-- Updated backend CORS to allow localhost:5000
+- Configured Vite to run on port 5000 with 0.0.0.0 host and allowedHosts for Replit webview
+- Updated backend CORS to allow Replit domains (*.replit.dev, *.repl.co)
+- Added static file serving for production deployment
 - Created workflows for frontend (port 5000) and backend (port 8000)
+- Configured autoscale deployment with frontend build step
 - Updated .gitignore for Python and Node.js projects
 
 ## Project Architecture
