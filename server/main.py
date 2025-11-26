@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from server.services.posting_allocator import allocate_timetable
@@ -277,8 +277,20 @@ async def download_csv(payload: Dict[str, Any] = Body(...)):
     )
 
 
-# Mount static files for production deployment
-# Check if the client/dist directory exists (production mode)
+# Static files and SPA routing for production deployment
 client_dist_path = Path(__file__).parent.parent / "client" / "dist"
 if client_dist_path.exists() and client_dist_path.is_dir():
-    app.mount("/", StaticFiles(directory=str(client_dist_path), html=True), name="static")
+    # Serve static assets (JS, CSS, images) from /assets
+    assets_path = client_dist_path / "assets"
+    if assets_path.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+    
+    # Serve other static files from root (favicon, etc)
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        # Check if the file exists in dist
+        file_path = client_dist_path / path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(client_dist_path / "index.html")
