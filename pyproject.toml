@@ -8,5 +8,6 @@ dependencies = [
     "fastapi>=0.122.0",
     "ortools>=9.14.6206",
     "pandas>=2.3.3",
+    "python-multipart>=0.0.20",
     "uvicorn>=0.38.0",
 ]
