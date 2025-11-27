@@ -6,6 +6,13 @@ Residency Rotation Scheduler is a constraint-based optimization tool that uses G
 
 ## Recent Changes
 
+**November 27, 2025** - Stateless Architecture Implementation
+- Removed global Store class from backend to prevent data mixing between concurrent users
+- Updated /api/solve endpoint to be fully stateless (no server-side storage)
+- Updated /api/save endpoint to accept full context from client
+- Frontend now passes complete API response context when saving or running with pinned residents
+- Configured VM deployment target (better for single-worker solver workloads)
+
 **November 26, 2025** - Initial Replit setup
 - Configured Python 3.11 and Node.js 20 environments
 - Installed backend dependencies (FastAPI, OR-Tools, pandas, uvicorn, aiofiles)
@@ -14,7 +21,6 @@ Residency Rotation Scheduler is a constraint-based optimization tool that uses G
 - Updated backend CORS to allow Replit domains (*.replit.dev, *.repl.co)
 - Added static file serving for production deployment
 - Created workflows for frontend (port 5000) and backend (port 8000)
-- Configured autoscale deployment with frontend build step
 - Updated .gitignore for Python and Node.js projects
 
 ## Project Architecture
@@ -107,6 +113,6 @@ No specific user preferences documented yet.
 
 - The frontend communicates with the backend via axios HTTP client
 - Default backend URL: `http://127.0.0.1:8000/api`
-- Application uses in-memory state management (no persistent database)
+- **Stateless Backend**: All state is managed client-side to prevent data mixing between concurrent users. The client passes the full context (API response) when saving edits or running with pinned residents
 - Constraint solver can be time-limited via `max_time_in_minutes` parameter
 - See `constraints.md` for detailed explanation of optimization constraints and scoring
