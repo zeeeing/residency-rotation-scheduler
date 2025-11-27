@@ -12,6 +12,7 @@ export const api = axios.create({
 export type SaveSchedulePayload = {
   resident_mcr: string;
   current_year: { month_block: number; posting_code: string }[];
+  context: ApiResponse;
 };
 
 // routes

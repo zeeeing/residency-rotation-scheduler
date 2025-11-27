@@ -18,15 +18,7 @@ from server.services.validate import validate_assignment
 from server.utils import MONTH_LABELS
 
 
-# define a store class for local storage of latest inputs and API response
-class Store:
-    def __init__(self) -> None:
-        self.latest_inputs: Optional[Dict[str, Any]] = None
-        self.latest_api_response: Optional[Dict[str, Any]] = None
-
-
-# instantiate the store and FastAPI app
-store = Store()
+# instantiate the FastAPI app (stateless - no server-side session storage)
 app = FastAPI(title="R2S API")
 
 # configure CORS middleware
@@ -75,14 +67,8 @@ async def solve(request: Request):
         # parse form data
         form = await request.form()
 
-        # prepare solver input
-        solver_input, latest_inputs_snapshot = await prepare_solver_input(
-            form=form,
-            latest_inputs=store.latest_inputs,
-            latest_api_response=store.latest_api_response,
-        )
-        if latest_inputs_snapshot is not None:
-            store.latest_inputs = latest_inputs_snapshot
+        # prepare solver input (stateless - client provides previous context if needed)
+        solver_input = await prepare_solver_input(form=form)
         solver_payload = _deepcopy(solver_input)
 
         # call the posting allocator
@@ -119,8 +105,6 @@ async def solve(request: Request):
                 detail=final_result.get("error", "Postprocess failed"),
             )
 
-        # store the latest API response
-        store.latest_api_response = _deepcopy(final_result)
         return final_result
     except HTTPException:
         raise
@@ -132,15 +116,20 @@ async def solve(request: Request):
 
 @app.post("/api/save")
 async def save(payload: Dict[str, Any] = Body(...)):
+    """
+    Save manual edits to a resident's schedule.
+    Stateless: client must provide the full context (previous API response).
+    """
     resident_mcr = str(payload.get("resident_mcr") or "").strip()
     if not resident_mcr:
         raise HTTPException(status_code=400, detail="missing resident_mcr")
 
-    store_snapshot = store.latest_api_response or store.latest_inputs
-    if not store_snapshot:
+    # Client must provide the full context from previous API response
+    context = payload.get("context") or {}
+    if not context.get("residents") or not context.get("postings"):
         raise HTTPException(
             status_code=400,
-            detail="No dataset loaded. Upload CSV and run optimiser first.",
+            detail="Missing context. Please provide the full API response context.",
         )
 
     current_year = normalise_current_year_entries(payload.get("current_year") or [])
@@ -151,17 +140,17 @@ async def save(payload: Dict[str, Any] = Body(...)):
             {"month_block": entry["month_block"], "posting_code": entry["posting_code"]}
             for entry in current_year
         ],
-        "residents": store_snapshot.get("residents") or [],
-        "resident_history": store_snapshot.get("resident_history") or [],
-        "postings": store_snapshot.get("postings") or [],
+        "residents": context.get("residents") or [],
+        "resident_history": context.get("resident_history") or [],
+        "postings": context.get("postings") or [],
     }
 
     validation_result = validate_assignment(validation_payload)
     if not validation_result.get("success"):
         return JSONResponse(status_code=400, content=validation_result)
 
-    residents = _deepcopy(store_snapshot.get("residents") or [])
-    resident_history = _deepcopy(store_snapshot.get("resident_history") or [])
+    residents = _deepcopy(context.get("residents") or [])
+    resident_history = _deepcopy(context.get("resident_history") or [])
 
     filtered_history = [
         row
@@ -190,20 +179,16 @@ async def save(payload: Dict[str, Any] = Body(...)):
             }
         )
 
-    weightages = _deepcopy(
-        store_snapshot.get("weightages")
-        or (store.latest_inputs or {}).get("weightages")
-        or {}
-    )
+    weightages = _deepcopy(context.get("weightages") or {})
 
     updated_payload = {
         "residents": residents,
         "resident_history": filtered_history + new_entries,
-        "resident_preferences": store_snapshot.get("resident_preferences") or [],
-        "resident_sr_preferences": store_snapshot.get("resident_sr_preferences") or [],
-        "postings": store_snapshot.get("postings") or [],
+        "resident_preferences": context.get("resident_preferences") or [],
+        "resident_sr_preferences": context.get("resident_sr_preferences") or [],
+        "postings": context.get("postings") or [],
         "weightages": weightages,
-        "resident_leaves": store_snapshot.get("resident_leaves") or [],
+        "resident_leaves": context.get("resident_leaves") or [],
     }
 
     result = compute_postprocess(updated_payload)
@@ -212,7 +197,6 @@ async def save(payload: Dict[str, Any] = Body(...)):
             status_code=500, detail=result.get("error", "Postprocess failed")
         )
 
-    store.latest_api_response = _deepcopy(result)
     return result
 
 

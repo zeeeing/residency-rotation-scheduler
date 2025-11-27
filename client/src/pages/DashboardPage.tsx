@@ -101,6 +101,11 @@ const HomePage: React.FC = () => {
     formData.append("weightages", JSON.stringify(weightages));
     formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
     formData.append("max_time_in_minutes", maxTimeInMinutes.toString());
+    
+    // For pinned runs, include previous response so backend can use it (stateless)
+    if (pinnedMcrs.size > 0 && apiResponse) {
+      formData.append("previous_response", JSON.stringify(apiResponse));
+    }
 
     try {
       const json: ApiResponse = await solve(formData);
