@@ -91,6 +91,7 @@ def allocate_timetable(
 
     # 6. derive pinned assignments from resident history current year flags
     pins_by_resident: Dict[str, Dict[int, str]] = {}
+    derived_leave_rows: List[Dict[str, Any]] = []
 
     def _record_pin(mcr: str, block: int, posting: str) -> None:
         if posting not in posting_info or block not in blocks:
@@ -107,35 +108,36 @@ def allocate_timetable(
             posting_code = entry.get("posting_code")
             _record_pin(mcr, block, posting_code)
 
-    # b. add current year non-leave postings from resident history
+    # b. process current-year resident history rows (pin postings, capture leaves)
     filtered_resident_history: List[Dict] = []
     for row in resident_history or []:
         current_row = dict(row)
         mcr = current_row.get("mcr")
         month_block = current_row.get("month_block")
         posting_code = current_row.get("posting_code")
+
         is_current_year = current_row.get("is_current_year")
         is_leave = current_row.get("is_leave")
 
-        if (
-            is_current_year
-            and not is_leave
-            and mcr
-            and month_block is not None
-            and posting_code
-        ):
-            if posting_code not in posting_info or month_block not in blocks:
-                logger.warning(
-                    "Skipping pinned history row with unknown posting/block: %s %s %s",
-                    mcr,
-                    posting_code,
-                    month_block,
+        # if leave entry and marked as current year in resident history, capture as derived leave row
+        if is_current_year and is_leave:
+            if mcr and month_block is not None:
+                derived_leave_rows.append(
+                    {
+                        "mcr": mcr,
+                        "month_block": month_block,
+                        "posting_code": posting_code,
+                        "leave_type": current_row.get("leave_type", ""),
+                    }
                 )
-            else:
-                _record_pin(mcr, month_block, posting_code)
-            continue
 
-        filtered_resident_history.append(current_row)
+        # if not leave entry and marked as current year in resident history, record as pinned assignment
+        elif is_current_year and not is_leave:
+            _record_pin(mcr, month_block, posting_code)
+
+        # else, retain in filtered resident history
+        else:
+            filtered_resident_history.append(current_row)
 
     # shape pinned assignments back to same structure as input pinned assignments
     if pins_by_resident:
@@ -151,6 +153,9 @@ def allocate_timetable(
 
     resident_history = filtered_resident_history
 
+    # pass through existing leaves; derived leaves will be merged and normalised later
+    resident_leaves = (resident_leaves or []) + derived_leave_rows
+
     # 7. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
@@ -163,25 +168,43 @@ def allocate_timetable(
     leave_off_blocks: Set[Tuple[str, int]] = set()
     leave_map: Dict[str, Dict[int, Dict]] = {}
     leave_quota_usage: Dict[str, Dict[int, int]] = {}
-    if resident_leaves:
-        for row in resident_leaves:
-            # unpack required fields from the leave row
-            m = row.get("mcr")
-            b = row.get("month_block")
-            leave_type = row.get("leave_type")
-            leave_posting_code = row.get("posting_code")
-            # ignore invalid leave posting codes so the solver does not choke on unknown postings
-            if leave_posting_code and leave_posting_code not in posting_info:
-                leave_posting_code = ""
-            # record leave details keyed by resident and block for quick lookup later
-            leave_map.setdefault(m, {})[b] = {
+    normalised_leaves: List[Dict[str, Any]] = []
+    seen_leave_keys: Set[Tuple[str, int]] = set()
+
+    for row in resident_leaves or []:
+        mcr = row.get("mcr")
+        block = row.get("month_block")
+        key = (mcr, block)
+
+        if key in seen_leave_keys:
+            continue
+
+        seen_leave_keys.add(key)
+        leave_type = row.get("leave_type")
+        leave_posting_code = row.get("posting_code")
+
+        if leave_posting_code and leave_posting_code not in posting_info:
+            leave_posting_code = ""
+
+        normalised_leaves.append(
+            {
+                "mcr": mcr,
+                "month_block": block,
                 "leave_type": leave_type,
                 "posting_code": leave_posting_code,
             }
-            # track how many times each posting's leave quota is used per block
-            if leave_posting_code:
-                quota_by_block = leave_quota_usage.setdefault(leave_posting_code, {})
-                quota_by_block[b] = quota_by_block.get(b, 0) + 1
+        )
+
+        leave_map.setdefault(mcr, {})[block] = {
+            "leave_type": leave_type,
+            "posting_code": leave_posting_code,
+        }
+        if leave_posting_code:
+            quota_by_block = leave_quota_usage.setdefault(leave_posting_code, {})
+            quota_by_block[block] = quota_by_block.get(block, 0) + 1
+
+    # propagate the normalised leaves downstream (for postprocess/save paths)
+    resident_leaves = normalised_leaves
 
     # 10. derive career progress per resident
     def stage_from_blocks(blocks_completed: int) -> int:
@@ -196,24 +219,36 @@ def allocate_timetable(
         mcr = resident["mcr"]
         completed_blocks = resident.get("career_blocks_completed", 0)
 
+        # leave does not advance career block progression; track per-block career block number
+        leave_blocks_for_resident = set(leave_map.get(mcr, {}).keys())
         stages_by_block: Dict[int, int] = {}
+        career_blocks_by_block: Dict[int, Optional[int]] = {}
+
         progress_counter = completed_blocks
         for b in blocks:
             stages_by_block[b] = stage_from_blocks(progress_counter)
+
+            if b in leave_blocks_for_resident:
+                career_blocks_by_block[b] = None
+                continue
+
             progress_counter += 1
+            career_blocks_by_block[b] = progress_counter
 
         stage = stage_from_blocks(completed_blocks)
         career_progress[mcr] = {
             "completed_blocks": completed_blocks,
             "stage": stage,
             "stages_by_block": stages_by_block,
+            "career_blocks_by_block": career_blocks_by_block,
         }
 
     ###########################################################################
     # CREATE DECISION VARIABLES
     ###########################################################################
 
-    # define block-wise variables
+    # 1. define block-wise variables
+    # Bool, 1 if resident mcr is assigned posting p in block b
     x = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -223,7 +258,8 @@ def allocate_timetable(
             for b in blocks:
                 x[mcr][p][b] = model.NewBoolVar(f"x_{mcr}_{to_snake_case(p)}_{b}")
 
-    # define selection flags
+    # 2. define selection flags
+    # Bool, 1 if posting p is selected at least once for the resident (run‑level selection)
     selection_flags = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -233,7 +269,8 @@ def allocate_timetable(
                 f"{mcr}_{to_snake_case(p)}_selected"
             )
 
-    # define posting assignment count variables
+    # 3. define posting assignment count variables
+    # Int, number of runs of posting p for a resident
     posting_asgm_count = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -257,7 +294,7 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
-    # for leave or debug: define per-block slack (OFF) variables (treated as off_or_leave)
+    # 4. for leave or debug: define per-block slack (OFF) variables (treated as off_or_leave)
     off_or_leave = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -302,7 +339,7 @@ def allocate_timetable(
             continue
 
         for b, meta in resident_leaves_for_blocks.items():
-            posting_code = (meta.get("posting_code", "") or "").strip()
+            posting_code = meta.get("posting_code")
             if posting_code and posting_code not in posting_info:
                 posting_code = ""
                 meta["posting_code"] = ""
@@ -764,7 +801,11 @@ def allocate_timetable(
             num_assigned = model.NewIntVar(
                 0, len(residents), f"num_assigned_{to_snake_case(p)}_{b}"
             )
-            model.Add(num_assigned == sum(x[r["mcr"]][p][b] for r in residents))
+            assigned = sum(x[r["mcr"]][p][b] for r in residents)
+            reserved = leave_quota_usage.get(p, {}).get(b, 0)
+
+            # count leave-reserved slots as occupied so balancing sees the reduced headcount
+            model.Add(num_assigned == assigned + reserved)
             assignments_per_block[b] = num_assigned
 
         # First half of the year (blocks 1-6)
@@ -884,9 +925,11 @@ def allocate_timetable(
     sr_bonus_context: Dict[str, Dict] = {}
     for resident in residents:
         mcr = resident["mcr"]
-        completed_blocks = career_progress[mcr]["completed_blocks"]
+        career_blocks_by_block = career_progress[mcr].get("career_blocks_by_block", {})
         sr_prefs = {
-            rank: base for rank, base in (sr_pref_map.get(mcr, {}) or {}).items() if base
+            rank: base
+            for rank, base in (sr_pref_map.get(mcr, {}) or {}).items()
+            if base
         }
         if not sr_prefs:
             continue
@@ -951,17 +994,59 @@ def allocate_timetable(
         sr_count = sum(selection_flags[mcr][p] for p in sr_variants)
         model.Add(sr_count <= 1)
 
-        # ban SR posting allocation in the relevant ineligible periods
-        Y = []
-        for b in blocks:
-            yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
-            model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
-            Y.append(yb)
+        # special-case GM SR: allow up to 3 GM blocks outside SR window, require >=3 inside
+        gm_sr_variants = [p for p in sr_variants if base_key(p) == "gm"]
+        non_gm_sr_variants = [p for p in sr_variants if p not in gm_sr_variants]
 
-        for idx, b in enumerate(blocks):
-            absolute_block = completed_blocks + b
-            if absolute_block < 19 or absolute_block > 30:
-                model.Add(Y[idx] == 0)
+        # ban non-GM SR posting allocation outside the SR-eligible window
+        if non_gm_sr_variants:
+            Y = []
+            for b in blocks:
+                yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
+                model.Add(sum(x[mcr][p][b] for p in non_gm_sr_variants) == yb)
+                Y.append(yb)
+
+            for idx, b in enumerate(blocks):
+                absolute_block = career_blocks_by_block.get(b)
+                if absolute_block is None or absolute_block < 19 or absolute_block > 30:
+                    model.Add(Y[idx] == 0)
+
+        if gm_sr_variants:
+            inside_window_blocks = [
+                b
+                for b in blocks
+                if (
+                    (career_blocks_by_block.get(b) is not None)
+                    and 19 <= career_blocks_by_block[b] <= 30
+                )
+            ]
+            inside_window_capacity = len(inside_window_blocks)
+
+            gm_inside_terms = []
+            gm_outside_terms = []
+            for p in gm_sr_variants:
+                for b in blocks:
+                    absolute_block = career_blocks_by_block.get(b)
+                    if absolute_block is None:
+                        continue
+                    if 19 <= absolute_block <= 30:
+                        gm_inside_terms.append(x[mcr][p][b])
+                    else:
+                        gm_outside_terms.append(x[mcr][p][b])
+
+            gm_inside = model.NewIntVar(
+                0, len(gm_sr_variants) * len(blocks), f"{mcr}_gm_sr_inside"
+            )
+            gm_outside = model.NewIntVar(
+                0, len(gm_sr_variants) * len(blocks), f"{mcr}_gm_sr_outside"
+            )
+
+            model.Add(gm_inside == (sum(gm_inside_terms) if gm_inside_terms else 0))
+            model.Add(gm_outside == (sum(gm_outside_terms) if gm_outside_terms else 0))
+
+            if inside_window_capacity >= 3:
+                model.Add(gm_inside >= 3)
+            model.Add(gm_outside <= 3)
 
     ###########################################################################
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
