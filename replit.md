@@ -6,11 +6,14 @@ Residency Rotation Scheduler is a constraint-based optimization tool that uses G
 
 ## Recent Changes
 
-**November 29, 2025** - PostgreSQL Session Persistence
+**November 29, 2025** - PostgreSQL Session Persistence + Auto-Save
 - Added PostgreSQL database for saving solver sessions
 - Created SolverSession model to store complete API responses as JSON
 - Added session CRUD endpoints (GET/POST/PUT/DELETE /api/sessions)
+- Added GET /api/sessions/latest endpoint for fetching most recent session
 - Added SessionManager component for save/load UI in frontend
+- **Auto-save**: Results automatically saved to database after each solver run
+- **Auto-load**: Most recent session automatically loaded when visiting the page
 - Database integration is optional (app works without DATABASE_URL)
 
 **November 27, 2025** - Stateless Architecture Implementation
