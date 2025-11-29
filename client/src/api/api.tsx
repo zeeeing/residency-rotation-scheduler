@@ -111,6 +111,11 @@ export const getSession = async (sessionId: number): Promise<SessionFull> => {
   return data;
 };
 
+export const getLatestSession = async (): Promise<{ session: SessionFull | null }> => {
+  const { data } = await api.get<{ session: SessionFull | null }>("/sessions/latest");
+  return data;
+};
+
 export const updateSession = async (
   sessionId: number,
   payload: UpdateSessionPayload

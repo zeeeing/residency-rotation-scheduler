@@ -286,6 +286,15 @@ async def list_sessions(db: Session = Depends(get_db)):
     return {"sessions": [s.to_dict() for s in sessions]}
 
 
+@app.get("/api/sessions/latest")
+async def get_latest_session(db: Session = Depends(get_db)):
+    """Get the most recently updated session with full api_response data."""
+    session = db.query(SolverSession).order_by(SolverSession.updated_at.desc()).first()
+    if not session:
+        return {"session": None}
+    return {"session": session.to_full_dict()}
+
+
 @app.post("/api/sessions")
 async def create_session(payload: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
     """Save a new solver session to the database."""

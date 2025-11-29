@@ -1,7 +1,7 @@
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import React, { useEffect, useMemo, useState } from "react";
-import { solve, checkDbStatus } from "../api/api";
+import { solve, checkDbStatus, createSession, getLatestSession } from "../api/api";
 import type {
   ApiResponse,
   CsvFilesState,
@@ -75,7 +75,24 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     checkDbStatus()
-      .then((status) => setIsDbAvailable(status.available))
+      .then((status) => {
+        setIsDbAvailable(status.available);
+        if (status.available) {
+          getLatestSession()
+            .then((result) => {
+              if (result.session) {
+                setApiResponse(result.session.api_response);
+                if (result.session.api_response.residents?.length) {
+                  setSelectedResidentMcr(result.session.api_response.residents[0].mcr);
+                }
+                if (result.session.academic_year) {
+                  setCurrentAcademicYearInput(result.session.academic_year);
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      })
       .catch(() => setIsDbAvailable(false));
   }, []);
 
@@ -121,6 +138,24 @@ const HomePage: React.FC = () => {
       console.log("API Response:", json);
       if (json.success && json.residents) {
         setApiResponse(json);
+        
+        if (isDbAvailable) {
+          const timestamp = new Date().toLocaleString();
+          const sessionName = currentAcademicYearInput 
+            ? `AY${currentAcademicYearInput} - ${timestamp}`
+            : `Session - ${timestamp}`;
+          
+          try {
+            const result = await createSession({
+              name: sessionName,
+              api_response: json,
+              academic_year: currentAcademicYearInput || undefined,
+            });
+            setCurrentSessionId(result.session.id);
+          } catch (saveErr) {
+            console.error("Auto-save failed:", saveErr);
+          }
+        }
       } else {
         setError(
           `Server returned success=${json?.success}, residents count=${json?.residents?.length ?? 0}`
