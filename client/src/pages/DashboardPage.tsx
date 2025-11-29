@@ -1,7 +1,7 @@
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import React, { useEffect, useMemo, useState } from "react";
-import { solve } from "../api/api";
+import { solve, checkDbStatus } from "../api/api";
 import type {
   ApiResponse,
   CsvFilesState,
@@ -15,6 +15,7 @@ import FileUpload from "../components/FileUpload";
 import PostingUtilTable from "../components/PostingUtilTable";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
+import { SessionManager } from "../components/SessionManager";
 import WeightageSelector from "../components/WeightageSelector";
 import { generateSampleCSV } from "../lib/generateSampleCSV";
 
@@ -69,6 +70,14 @@ const HomePage: React.FC = () => {
         return "";
       }
     });
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  const [isDbAvailable, setIsDbAvailable] = useState<boolean>(false);
+
+  useEffect(() => {
+    checkDbStatus()
+      .then((status) => setIsDbAvailable(status.available))
+      .catch(() => setIsDbAvailable(false));
+  }, []);
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
@@ -332,6 +341,24 @@ const HomePage: React.FC = () => {
         >
           Download Sample CSV
         </Button>
+        {isDbAvailable && (
+          <SessionManager
+            apiResponse={apiResponse}
+            currentSessionId={currentSessionId}
+            academicYear={currentAcademicYearInput}
+            onSessionLoaded={(response, sessionId) => {
+              setApiResponse(response);
+              setCurrentSessionId(sessionId);
+              setPinnedMcrs(new Set());
+              if (response.residents?.length) {
+                setSelectedResidentMcr(response.residents[0].mcr);
+              }
+            }}
+            onSessionSaved={(sessionId) => {
+              setCurrentSessionId(sessionId);
+            }}
+          />
+        )}
       </div>
 
       {/* Error Message */}

@@ -6,6 +6,13 @@ Residency Rotation Scheduler is a constraint-based optimization tool that uses G
 
 ## Recent Changes
 
+**November 29, 2025** - PostgreSQL Session Persistence
+- Added PostgreSQL database for saving solver sessions
+- Created SolverSession model to store complete API responses as JSON
+- Added session CRUD endpoints (GET/POST/PUT/DELETE /api/sessions)
+- Added SessionManager component for save/load UI in frontend
+- Database integration is optional (app works without DATABASE_URL)
+
 **November 27, 2025** - Stateless Architecture Implementation
 - Removed global Store class from backend to prevent data mixing between concurrent users
 - Updated /api/solve endpoint to be fully stateless (no server-side storage)
@@ -51,6 +58,8 @@ Key endpoints:
 - `POST /api/solve` - Run the optimization solver with uploaded CSVs
 - `POST /api/save` - Save manual edits to resident schedules
 - `POST /api/download-csv` - Export final timetable
+- `GET /api/db-status` - Check if database is available
+- `GET/POST/PUT/DELETE /api/sessions` - Session CRUD operations
 
 Services:
 - `posting_allocator.py` - Core OR-Tools constraint solver

@@ -1,13 +1,17 @@
 import copy
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
+from server.database import get_db, init_db, is_db_available
+from server.models import SolverSession
 from server.services.posting_allocator import allocate_timetable
 from server.services.postprocess import compute_postprocess
 from server.services.preprocessing import (
@@ -18,14 +22,20 @@ from server.services.validate import validate_assignment
 from server.utils import MONTH_LABELS
 
 
-# instantiate the FastAPI app (stateless - no server-side session storage)
-app = FastAPI(title="R2S API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="R2S API", lifespan=lifespan)
 
 # configure CORS middleware
 # Allow localhost for development and Replit domains for preview/deployment
 origins = [
     "http://localhost:5173",
     "http://localhost:5000",
+    "http://127.0.0.1:5000",
     "http://0.0.0.0:5000",
 ]
 app.add_middleware(
@@ -261,6 +271,96 @@ async def download_csv(payload: Dict[str, Any] = Body(...)):
             "Content-Disposition": 'attachment; filename="final_timetable.csv"',
         },
     )
+
+
+@app.get("/api/db-status")
+async def db_status():
+    """Check if database is available for session persistence."""
+    return {"available": is_db_available()}
+
+
+@app.get("/api/sessions")
+async def list_sessions(db: Session = Depends(get_db)):
+    """List all saved solver sessions (without full api_response data)."""
+    sessions = db.query(SolverSession).order_by(SolverSession.updated_at.desc()).all()
+    return {"sessions": [s.to_dict() for s in sessions]}
+
+
+@app.post("/api/sessions")
+async def create_session(payload: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
+    """Save a new solver session to the database."""
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Session name is required")
+    
+    api_response = payload.get("api_response")
+    if not api_response or not isinstance(api_response, dict):
+        raise HTTPException(status_code=400, detail="api_response is required")
+    
+    session = SolverSession(
+        name=name,
+        academic_year=str(payload.get("academic_year") or "").strip() or None,
+        api_response=api_response,
+        notes=str(payload.get("notes") or "").strip() or None,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    
+    return {"success": True, "session": session.to_dict()}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: int, db: Session = Depends(get_db)):
+    """Get a specific session with full api_response data."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session.to_full_dict()
+
+
+@app.put("/api/sessions/{session_id}")
+async def update_session(session_id: int, payload: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
+    """Update an existing session (name, notes, or api_response)."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if "name" in payload:
+        name = str(payload["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Session name cannot be empty")
+        session.name = name
+    
+    if "notes" in payload:
+        session.notes = str(payload["notes"]).strip() or None
+    
+    if "academic_year" in payload:
+        session.academic_year = str(payload["academic_year"]).strip() or None
+    
+    if "api_response" in payload:
+        api_response = payload["api_response"]
+        if not isinstance(api_response, dict):
+            raise HTTPException(status_code=400, detail="api_response must be a valid object")
+        session.api_response = api_response
+    
+    db.commit()
+    db.refresh(session)
+    
+    return {"success": True, "session": session.to_dict()}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: int, db: Session = Depends(get_db)):
+    """Delete a session."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    db.delete(session)
+    db.commit()
+    
+    return {"success": True, "message": "Session deleted"}
 
 
 # Static files and SPA routing for production deployment
