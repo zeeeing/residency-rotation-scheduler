@@ -1,7 +1,7 @@
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import React, { useEffect, useMemo, useState } from "react";
-import { solve, checkDbStatus, createSession, getLatestSession } from "../api/api";
+import { solve, checkDbStatus, getLatestSession } from "../api/api";
 import type {
   ApiResponse,
   CsvFilesState,
@@ -132,29 +132,21 @@ const HomePage: React.FC = () => {
     if (pinnedMcrs.size > 0 && apiResponse) {
       formData.append("previous_response", JSON.stringify(apiResponse));
     }
+    
+    // Pass academic year for session naming
+    if (currentAcademicYearInput) {
+      formData.append("academic_year", currentAcademicYearInput);
+    }
 
     try {
-      const json: ApiResponse = await solve(formData);
+      const json: ApiResponse & { saved_session_id?: number } = await solve(formData);
       console.log("API Response:", json);
       if (json.success && json.residents) {
         setApiResponse(json);
         
-        if (isDbAvailable) {
-          const timestamp = new Date().toLocaleString();
-          const sessionName = currentAcademicYearInput 
-            ? `AY${currentAcademicYearInput} - ${timestamp}`
-            : `Session - ${timestamp}`;
-          
-          try {
-            const result = await createSession({
-              name: sessionName,
-              api_response: json,
-              academic_year: currentAcademicYearInput || undefined,
-            });
-            setCurrentSessionId(result.session.id);
-          } catch (saveErr) {
-            console.error("Auto-save failed:", saveErr);
-          }
+        // Server auto-saves to database, use the returned session ID
+        if (json.saved_session_id) {
+          setCurrentSessionId(json.saved_session_id);
         }
       } else {
         setError(

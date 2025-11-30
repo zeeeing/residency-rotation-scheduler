@@ -76,6 +76,11 @@ async def solve(request: Request):
     try:
         # parse form data
         form = await request.form()
+        
+        # extract academic year for session naming
+        academic_year = None
+        if "academic_year" in form:
+            academic_year = str(form["academic_year"]).strip() or None
 
         # prepare solver input (stateless - client provides previous context if needed)
         solver_input = await prepare_solver_input(form=form)
@@ -116,6 +121,36 @@ async def solve(request: Request):
                 status_code=500,
                 detail=final_result.get("error", "Postprocess failed"),
             )
+
+        # Auto-save to database if available
+        saved_session_id = None
+        if is_db_available():
+            try:
+                from datetime import datetime
+                from server.database import SessionLocal
+                
+                db = SessionLocal()
+                try:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session_name = f"AY{academic_year} - {timestamp}" if academic_year else f"Session - {timestamp}"
+                    
+                    new_session = SolverSession(
+                        name=session_name,
+                        academic_year=academic_year,
+                        api_response=final_result,
+                    )
+                    db.add(new_session)
+                    db.commit()
+                    db.refresh(new_session)
+                    saved_session_id = new_session.id
+                finally:
+                    db.close()
+            except Exception as save_err:
+                print(f"Auto-save failed: {save_err}")
+
+        # Include session_id in response if saved
+        if saved_session_id:
+            final_result["saved_session_id"] = saved_session_id
 
         return final_result
     except HTTPException:
