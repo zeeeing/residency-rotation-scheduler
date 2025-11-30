@@ -198,14 +198,14 @@ export function SessionManager({
             Load Session
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Load Session</DialogTitle>
             <DialogDescription>
               Load a previously saved solver session from the database.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 flex-1 overflow-hidden">
             <div className="flex justify-end mb-2">
               <Button
                 variant="ghost"
@@ -213,7 +213,10 @@ export function SessionManager({
                 onClick={fetchSessions}
                 disabled={isLoading}
               >
-                <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+                <RefreshCw
+                  size={14}
+                  className={isLoading ? "animate-spin" : ""}
+                />
               </Button>
             </div>
             {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
@@ -222,26 +225,26 @@ export function SessionManager({
                 No saved sessions found.
               </p>
             ) : (
-              <div className="max-h-80 overflow-auto">
+              <div className="max-h-80 overflow-auto border rounded-md">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Academic Year</TableHead>
-                      <TableHead>Residents</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead className="w-24">Actions</TableHead>
+                      <TableHead className="max-w-[200px]">Name</TableHead>
+                      <TableHead className="w-24">Year</TableHead>
+                      <TableHead className="w-16">Count</TableHead>
+                      <TableHead className="w-32">Updated</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sessions.map((session) => (
                       <TableRow key={session.id}>
-                        <TableCell className="font-medium">
+                        <TableCell className="font-medium max-w-[200px] truncate" title={session.name}>
                           {session.name}
                         </TableCell>
                         <TableCell>{session.academic_year || "-"}</TableCell>
                         <TableCell>{session.resident_count}</TableCell>
-                        <TableCell className="text-sm text-gray-500">
+                        <TableCell className="text-sm text-gray-500 whitespace-nowrap">
                           {formatDate(session.updated_at)}
                         </TableCell>
                         <TableCell>
