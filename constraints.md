@@ -26,7 +26,7 @@ All constraints below are implemented in `server/services/posting_allocator.py`.
 12. ED↔GRM↔GM contiguity: If ED, GRM, and GM all appear, their combined blocks must form one contiguous run.
 13. MICU/RCCM stage packs: Stage 1 may optionally do pack (1 MICU, 2 RCCM) or none; if pack not yet done historically, stage1+stage2 must deliver it. If first pack is already done and stage 2 exists, stage 2 may optionally deliver pack (2 MICU, 1 RCCM). Stage 3 must deliver remaining MICU/RCCM blocks to hit three each (adjusted for history).
 14. Balancing within halves: For every posting except GM/ED/GRM, resident counts per block are equal within blocks 1–6 and within blocks 7–12 (min == max in each half).
-15. SR scheduling limits: At most one SR posting; SR blocks only allowed when career block numbers are 19–30.
+15. SR scheduling limits: At most one chosen SR posting. If any SR preference posting is scheduled, exactly one must be marked as chosen. The chosen SR must be within career blocks 19–30. If the resident has no historical SR in career blocks 19–24, the chosen SR must be scheduled in blocks 25–30. Blocks 19–24 are encouraged via bonus when the chosen SR is placed there (other postings indicated in SR preferences may be scheduled anywhere).
 
 - Inactive guardrail: The commented “Hard Constraint 14” (force one ED and one GRM when neither is done historically) is currently disabled.
 
@@ -36,10 +36,17 @@ All constraints below are implemented in `server/services/posting_allocator.py`.
   - Stage-2 residents must have at least one elective completed to date (historic + assigned).
   - Bonus for a second elective in stage 2 when elective preferences exist.
   - Stage-3 residents aim for five total electives; falling short incurs an `elective_shortfall_penalty`.
-- Core requirements: For stage-3 residents with unmet core bases, equality to the requirement is enforced unless a slack var (`*_req_unmet`) is paid, which incurs `core_shortfall_penalty`.
-- SR preference handling: SR preferences are normalised to base postings; only one SR may be selected. Eligibility for SR preference bonuses depends on variant availability and elective preference overlap; SR electives are only bonus-eligible when no elective preferences exist.
+- Core requirements:
+  - For stage-3 residents with unmet core bases, equality to the requirement is enforced unless a slack var (`*_req_unmet`) is paid, which incurs `core_shortfall_penalty`.
+- SR preference handling:
+  - SR preferences are normalised to base postings.
+  - If any SR preference is scheduled, exactly one posting must be marked as the chosen SR.
+  - The chosen SR must sit in career blocks 19–30; if the resident has no historical SR in career blocks 19–24, the chosen SR must be placed in blocks 25–30.
+  - Other SR bases can still be scheduled normally.
 - Preference bonus: Weighted by rank (`preference` weight) for resident elective preferences.
-- SR preference bonus: Rank-weighted bonus (sharing the `preference` weight) for eligible SR bases.
+- SR preference bonus:
+  - Weighted by rank (sharing the `preference` weight) for eligible SR bases when chosen as the SR posting, plus an extra bonus when the chosen SR is placed in career blocks 19–24.
+  - To avoid double-counting when an elective posting is chosen as the SR, these postings are exempted from elective preference bonuses.
 - Seniority bonus: Higher career stage assignments add value scaled by the `seniority` weight.
 - Core prioritisation bonus: Fixed bonus for assigning any core posting.
 - ED+GRM pairing bonus: Bonus when both an ED and a GRM are selected.
