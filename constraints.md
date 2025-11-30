@@ -1,50 +1,53 @@
 # Posting Allocator Constraints
 
-All constraints below are implemented in `server/services/posting_allocator.py`. Items marked “Hard” must hold in every solution, while “Soft” items allow trade-offs through penalties or bonuses in the objective.
+All constraints below are implemented in `server/services/posting_allocator.py`. Items marked “Hard” must hold in every solution; “Soft” items are traded off in the objective with penalties or bonuses.
 
-## Linking and Pre-conditions
+## Linking, Inputs, and Pre-conditions
 
-- Bindings: Block-level decision vars, selection flags, and run-count vars are tied together (block totals = run_count × duration; selecting a posting implies count ≥ 1 and vice versa).
-- Pinned rows: Explicit pins and current-year history rows fix `x[mcr][posting][block] = 1`.
-- Leave handling: Declared leaves force `OFF` in those blocks and reserve capacity for the leave’s posting code.
+- Variable binding: For each resident/posting, block-level vars, selection flags, and run-count vars are tied together (`Σ blocks = run_count × required_block_duration`; `selected ⇔ run_count ≥ 1`).
+- Pins: Explicit pinned rows and current-year resident-history rows fix `x[mcr][posting][block] = 1`.
+- Leaves: Normalised (deduped) leaves force `OFF` in those blocks and reserve capacity when a leave specifies a posting code.
+- Career progression: Stage per block advances only on worked blocks (leave blocks pause the counter); this drives stage-aware rules (CCR, GM caps, SR window).
 
 ## Hard Constraints
 
-1. Exclusivity per block: Exactly one posting or `OFF` per resident per block (leave blocks forced to `OFF`).
-2. Posting capacity: Per-block headcount ≤ `max_residents` minus any leave-reserved slots.
-3. Consecutive runs: Postings respect `required_block_duration` via an automaton.
-4. CCR availability by stage: No CCR in stage 1; if CCR already done or no stage ≥2 blocks, zero CCR this year; otherwise exactly one CCR run from the offered CCR postings.
-5. Core caps: Prevent assigning more core blocks than the base requirement; if already met, block further assignments of that core base.
-6. Elective repetition: A resident may take at most one variant of an elective base; if already done historically, all variants of that base are disallowed.
-   7a. MICU/RCCM institution consistency: Cannot pick MICU and RCCM from different institutions.
-   7b. MICU/RCCM contiguity: Any MICU/RCCM run must be a single contiguous stretch and cannot span Dec→Jan.
-7. Dec→Jan guardrail: No posting may have runs in both Dec (block 6) and Jan (block 7).
-8. GRM start months: GRM can only start on odd blocks; any GRM on an even block must continue from the prior block.
-9. Quarter starts for 3-month runs: Postings of duration 3 may only start on blocks 1, 4, 7, or 10 (non-start blocks must be continuations).
-10. Stage-1 GM cap: Max three GM blocks in stage 1.
-11. ED↔GRM contiguity: If ED/GRM appear, they must form one contiguous run.
-12. ED↔GRM↔GM contiguity: If ED, GRM, and GM all appear, their combined blocks must form one contiguous run.
-13. MICU/RCCM stage packs: Stage 1 may optionally do pack (1 MICU, 2 RCCM) or none; if pack not yet done historically, stage1+stage2 must deliver it. If first pack is already done and stage 2 exists, stage 2 may optionally deliver pack (2 MICU, 1 RCCM). Stage 3 must deliver remaining MICU/RCCM blocks to hit three each (adjusted for history).
-14. Balancing within halves: For every posting except GM/ED/GRM, resident counts per block are equal within blocks 1–6 and within blocks 7–12 (min == max in each half).
-15. SR scheduling limits: At most one SR posting; SR blocks only allowed when career block numbers are 19–30.
-
-- Inactive guardrail: The commented “Hard Constraint 14” (force one ED and one GRM when neither is done historically) is currently disabled.
+1. HC1 — Exclusivity per block: Exactly one posting or `OFF` per resident per block; leave blocks are forced to `OFF`.
+2. HC2 — Posting capacity: Per-block headcount ≤ `max_residents` minus any slots reserved for leave.
+3. HC3 — Consecutive runs: Each posting honours `required_block_duration` using an automaton (no fragmented runs).
+4. HC4 — CCR availability by stage: CCR forbidden in stage 1. If CCR already done, or no stage ≥2 blocks exist, zero CCR this year. Otherwise: exactly one run when stage 3 blocks exist; at most one run when only stage 2 blocks exist.
+5. HC5 — Core caps (per resident): Do not exceed base core requirements; if already met historically, block further assignments of that base. Extra guard: GM cannot be completed to 6 blocks unless a CCR is present (capped at 5 otherwise).
+6. HC6 — Elective repetition: At most one variant of an elective base; if a base elective is already completed historically, all variants of that base are disallowed.
+7. HC7a — MICU/RCCM institution consistency: Cannot select MICU and RCCM from different institutions.
+8. HC7b — MICU/RCCM contiguity: MICU/RCCM blocks must form one contiguous run and cannot span Dec→Jan.
+9. HC8 — Dec→Jan guardrail: No posting may have runs in both Dec (block 6) and Jan (block 7).
+10. HC9 — GRM start months: GRM may only start on odd blocks (even-block GRM must continue from the prior block).
+11. HC10 — Quarter starts for 3-block runs: Postings of duration 3 may only start on blocks 1, 4, 7, or 10; other blocks must be continuations.
+12. HC11 — Stage-1 GM cap: Max three GM blocks in stage 1 (historical GM counts toward the cap).
+13. HC12 — ED↔GRM contiguity: If ED or GRM are present, all ED+GRM blocks must form one contiguous run.
+14. HC13 — ED↔GRM↔GM contiguity: If ED, GRM, and GM all appear, their combined blocks must form one contiguous run.
+15. HC14 — (Disabled) Guardrail that would force 1 ED and 1 GRM when neither is done historically.
+16. HC15 — MICU/RCCM by stage: Stage 1 may optionally deliver pack #1 (1 MICU, 2 RCCM). If pack #1 not done historically, stage 1+2 together must deliver pack #1. If pack #1 is already done and stage 2 blocks exist, stage 2 may optionally deliver pack #2 (2 MICU, 1 RCCM). Stage 3 assigns exactly the remaining MICU and RCCM blocks needed to reach three each after history.
+17. HC16 — Balancing within halves: For every posting except GM/ED/GRM, resident counts per block are equal within blocks 1–6 and within blocks 7–12 (leave-reserved slots are treated as occupied).
 
 ## Soft Constraints and Objective Terms
 
 - Elective requirements:
-  - Stage-2 residents must have at least one elective completed to date (historic + assigned).
-  - Bonus for a second elective in stage 2 when elective preferences exist.
-  - Stage-3 residents aim for five total electives; falling short incurs an `elective_shortfall_penalty`.
-- Core requirements: For stage-3 residents with unmet core bases, equality to the requirement is enforced unless a slack var (`*_req_unmet`) is paid, which incurs `core_shortfall_penalty`.
-- SR preference handling: SR preferences are normalised to base postings; only one SR may be selected. Eligibility for SR preference bonuses depends on variant availability and elective preference overlap; SR electives are only bonus-eligible when no elective preferences exist.
-- Preference bonus: Weighted by rank (`preference` weight) for resident elective preferences.
-- SR preference bonus: Rank-weighted bonus (sharing the `preference` weight) for eligible SR bases.
-- Seniority bonus: Higher career stage assignments add value scaled by the `seniority` weight.
-- Core prioritisation bonus: Fixed bonus for assigning any core posting.
-- ED+GRM pairing bonus: Bonus when both an ED and a GRM are selected.
-- Three-GM bonus: Bonus when exactly three GM blocks exist alongside at least one ED and one GRM.
-- ED+GRM+GM half-year bundle bonus: Bonus when all three appear but stay within the same half of the year (no cross-boundary bundle).
-- GM@KTPH bonus: Bonus for GM (KTPH) blocks in stage 1.
-- OFF penalty: Strong penalty for `OFF` blocks that are not reserved for leave.
-- S2 elective bonus: Additional bonus flag captured in stage 2 when more than one elective is present (pref-dependent).
+  - Stage 2: Must have ≥1 elective completed to date (history + current year). If elective prefs exist, a second elective (history + current year) earns a bonus.
+  - Stage 3: Aim for five total electives; a slack var (`*_elective_req_unmet`) incurs `elective_shortfall_penalty` when short.
+- Core requirements (stage 3): For each unmet core base, enforce equality to the requirement unless a slack var (`{base}_req_unmet`) is paid, incurring `core_shortfall_penalty`.
+- CCR timing bonus: Bonus for completing CCR during stage 2 and nowhere else (when not yet done).
+- SR preference constraints and bonuses:
+  - SR prefs are normalised to bases with available variants. If any SR-pref posting is selected, exactly one variant must be marked as the chosen SR.
+  - Chosen SR is forbidden outside career blocks 19–30; if no historical SR in blocks 19–24, the chosen SR must fall in blocks 25–30 (when such blocks exist).
+  - Rank-weighted SR preference bonus (uses the `preference` weight), plus an extra bonus for placing the chosen SR in blocks 19–24.
+  - Elective postings chosen as the SR do not receive elective preference bonuses to avoid double-counting.
+- Preference bonus: Rank-weighted (via `preference` weight) for elective preferences when the posting is selected and not chosen as SR.
+- Seniority bonus: Per-block bonus scaled by stage value and the `seniority` weight.
+- Core prioritisation bonus: Fixed bonus for selecting any core posting.
+- ED/GRM/GM bonuses:
+  - Pair bonus when both ED and GRM are selected.
+  - Three-GM bonus when exactly three GM blocks exist alongside at least one ED and one GRM.
+  - Half-year bundle bonus when ED, GRM, and GM all appear but stay within the same half-year.
+- GM@KTPH bonus: Bonus for `GM (KTPH)` blocks in stage 1.
+- OFF penalty: Strong penalty (`OFF` not on leave) to discourage unused blocks.
+- Objective: Maximise the sum of bonuses minus penalties above (weights primarily driven by `weightages` plus a few fixed constants noted inline).
