@@ -426,6 +426,7 @@ def allocate_timetable(
     # Hard Constraint 4 (CCR): CCR postings
     ccr_stage2_bonus_terms = []
     ccr_stage2_bonus_weight = 5
+    ccr_postings_available = [p for p in CCR_POSTINGS if p in posting_codes]
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -441,20 +442,18 @@ def allocate_timetable(
         )
 
         # extra protective layer of code to ensure user updates both posting codes and ccr posting codes
-        offered = [p for p in CCR_POSTINGS if p in posting_codes]
-
-        if not offered:
+        if not ccr_postings_available:
             continue
 
         if stage1_blocks:
             for b in stage1_blocks:
-                for p in offered:
+                for p in ccr_postings_available:
                     model.Add(x[mcr][p][b] == 0)
 
-        ccr_runs = sum(posting_asgm_count[mcr][p] for p in offered)
+        ccr_runs = sum(posting_asgm_count[mcr][p] for p in ccr_postings_available)
 
         if done_ccr:
-            for p in offered:
+            for p in ccr_postings_available:
                 model.Add(posting_asgm_count[mcr][p] == 0)
         # if stage 3 blocks are present (resident could possibly have stage 2 blocks too)
         elif stage3_blocks:
@@ -467,10 +466,13 @@ def allocate_timetable(
         # bonus: complete CCR during Stage 2 (and nowhere else)
         if (not done_ccr) and stage2_blocks:
             ccr_stage2_blocks = sum(
-                x[mcr][p][b] for p in offered for b in stage2_blocks
+                x[mcr][p][b] for p in ccr_postings_available for b in stage2_blocks
             )
             ccr_outside_stage2 = sum(
-                x[mcr][p][b] for p in offered for b in blocks if b not in stage2_blocks
+                x[mcr][p][b]
+                for p in ccr_postings_available
+                for b in blocks
+                if b not in stage2_blocks
             )
             flag = model.NewBoolVar(f"{mcr}_ccr_stage2_bonus")
             model.Add(ccr_stage2_blocks >= 1).OnlyEnforceIf(flag)
@@ -482,6 +484,10 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
+        done_ccr = any(
+            resident_progress.get(ccr_posting, {}).get("is_completed", False)
+            for ccr_posting in CCR_POSTINGS
+        )
 
         # get core blocks completed
         core_blocks_completed_map = get_core_blocks_completed(
@@ -500,6 +506,25 @@ def allocate_timetable(
 
             if blocks_completed >= required_blocks:
                 model.Add(assigned_blocks == 0)
+            elif (
+                base_posting == "GM"
+                and ccr_postings_available
+                and not done_ccr
+            ):
+                # prevent completing all 6 GM slots without a CCR by capping at 5 unless CCR is present
+                ccr_assigned = sum(
+                    x[mcr][p][b] for p in ccr_postings_available for b in blocks
+                )
+                ccr_present_flag = model.NewBoolVar(f"{mcr}_ccr_present_cap_guard")
+                model.Add(ccr_assigned >= 1).OnlyEnforceIf(ccr_present_flag)
+                model.Add(ccr_assigned == 0).OnlyEnforceIf(ccr_present_flag.Not())
+
+                model.Add(blocks_completed + assigned_blocks <= required_blocks - 1).OnlyEnforceIf(
+                    ccr_present_flag.Not()
+                )
+                model.Add(blocks_completed + assigned_blocks <= required_blocks).OnlyEnforceIf(
+                    ccr_present_flag
+                )
             else:
                 model.Add(blocks_completed + assigned_blocks <= required_blocks)
 
