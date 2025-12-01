@@ -1023,11 +1023,10 @@ def allocate_timetable(
         if not sr_variants:
             continue
 
-        # create SR choice flags (the chosen SR posting) and allow only one choice
+        # create SR choice flags (the chosen SR posting)
         choice_flags: Dict[str, cp_model.BoolVar] = {}
         for p in sr_variants:
             choice_flags[p] = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_chosen")
-            model.Add(choice_flags[p] <= selection_flags[mcr][p])
 
         # window sets for soft/hard constraint handling
         # 19–30 is the allowed SR window; 19–24 gets a bonus; 25–30 is the hard fallback if no historic SR in 19–24
@@ -1053,6 +1052,19 @@ def allocate_timetable(
         # track coverage flags per variant for hard/soft logic
         window_bonus_flags: Dict[str, cp_model.BoolVar] = {}
 
+        # If no SR window exists in this AY (e.g., stage 1), still choose one SR to reserve
+        # but ban it from being assigned this year.
+        if not blocks_window:
+            model.Add(sum(choice_flags.values()) == 1)
+            for p in sr_variants:
+                chosen_flag = choice_flags[p]
+                for b in blocks:
+                    model.Add(x[mcr][p][b] == 0).OnlyEnforceIf(chosen_flag)
+
+            sr_choice_flags[mcr] = choice_flags
+            sr_bonus_context[mcr] = {}
+            continue
+
         # force a chosen SR when any SR-pref posting is selected
         sr_present_flag = model.NewBoolVar(f"{mcr}_sr_pref_selected")
         sr_selection_sum = sum(selection_flags[mcr][p] for p in sr_variants)
@@ -1062,34 +1074,44 @@ def allocate_timetable(
 
         for p in sr_variants:
             chosen_flag = choice_flags[p]
+            model.Add(chosen_flag <= selection_flags[mcr][p])
 
-            # forbid chosen SR outside career blocks 19–30
-            for b in blocks:
-                absolute_block = career_blocks_by_block.get(b)
-                if absolute_block is None or absolute_block < 19 or absolute_block > 30:
-                    model.Add(x[mcr][p][b] == 0).OnlyEnforceIf(chosen_flag)
-
-            # flags for presence in 19–24 and 25–30
-            in_19_24_terms = [x[mcr][p][b] for b in blocks_19_24]
-            in_19_24_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_19_24")
-            if in_19_24_terms:
-                model.Add(sum(in_19_24_terms) >= 1).OnlyEnforceIf(in_19_24_flag)
-                model.Add(sum(in_19_24_terms) == 0).OnlyEnforceIf(in_19_24_flag.Not())
-            else:
-                # no available blocks in 19–24 for this resident
-                model.Add(in_19_24_flag == 0)
-
-            in_25_30_terms = [x[mcr][p][b] for b in blocks_25_30]
-            in_25_30_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_25_30")
-            if in_25_30_terms:
-                model.Add(sum(in_25_30_terms) >= 1).OnlyEnforceIf(in_25_30_flag)
-                model.Add(sum(in_25_30_terms) == 0).OnlyEnforceIf(in_25_30_flag.Not())
-            else:
-                # no available blocks in 25–30 for this resident
-                model.Add(in_25_30_flag == 0)
-
-            # chosen SR must be in the 19–30 window
+            # if no SR window exists this AY (e.g., stage 1), skip window gating
             if blocks_window:
+                # forbid chosen SR outside career blocks 19–30
+                for b in blocks:
+                    absolute_block = career_blocks_by_block.get(b)
+                    if (
+                        absolute_block is None
+                        or absolute_block < 19
+                        or absolute_block > 30
+                    ):
+                        model.Add(x[mcr][p][b] == 0).OnlyEnforceIf(chosen_flag)
+
+                # flags for presence in 19–24 and 25–30
+                in_19_24_terms = [x[mcr][p][b] for b in blocks_19_24]
+                in_19_24_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_19_24")
+                if in_19_24_terms:
+                    model.Add(sum(in_19_24_terms) >= 1).OnlyEnforceIf(in_19_24_flag)
+                    model.Add(sum(in_19_24_terms) == 0).OnlyEnforceIf(
+                        in_19_24_flag.Not()
+                    )
+                else:
+                    # no available blocks in 19–24 for this resident
+                    model.Add(in_19_24_flag == 0)
+
+                in_25_30_terms = [x[mcr][p][b] for b in blocks_25_30]
+                in_25_30_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_25_30")
+                if in_25_30_terms:
+                    model.Add(sum(in_25_30_terms) >= 1).OnlyEnforceIf(in_25_30_flag)
+                    model.Add(sum(in_25_30_terms) == 0).OnlyEnforceIf(
+                        in_25_30_flag.Not()
+                    )
+                else:
+                    # no available blocks in 25–30 for this resident
+                    model.Add(in_25_30_flag == 0)
+
+                # chosen SR must be in the 19–30 window
                 sr_bases_completed_19_24 = hist_sr_19_24.get(mcr, set())
                 has_hist_sr_19_24 = base_key(p) in sr_bases_completed_19_24
 
@@ -1106,6 +1128,12 @@ def allocate_timetable(
                     else:
                         # if no eligible 25–30 blocks exist, keep the constraint vacuous so solver can leave it unchosen
                         pass
+            else:
+                # define dummy flags so bonuses below can still read zeros
+                in_19_24_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_19_24")
+                in_25_30_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_25_30")
+                model.Add(in_19_24_flag == 0)
+                model.Add(in_25_30_flag == 0)
 
             # bonus for placing chosen SR in career blocks 19–24
             bonus_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(p)}_sr_19_24_bonus")
