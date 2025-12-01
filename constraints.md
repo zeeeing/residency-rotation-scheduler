@@ -38,7 +38,7 @@ All constraints below are implemented in `server/services/posting_allocator.py`.
 - CCR timing bonus: Bonus for completing CCR during stage 2 and nowhere else (when not yet done).
 - SR preference constraints and bonuses:
   - SR prefs are normalised to bases with available variants. If any SR-pref posting is selected, exactly one variant must be marked as the chosen SR.
-  - Chosen SR is forbidden outside career blocks 19–30; if no historical SR in blocks 19–24, the chosen SR must fall in blocks 25–30 (when such blocks exist).
+  - Chosen SR is forbidden outside career blocks 19–30; if no historical SR in career blocks 19–24, the chosen SR must fall in career blocks 25–30 (when such blocks exist). If no 19–30 career blocks exist in the current AY (e.g., stage 1 resident), a chosen SR is still required and is banned from assignment this year; window bonuses are skipped.
   - Rank-weighted SR preference bonus (uses the `preference` weight), plus an extra bonus for placing the chosen SR in blocks 19–24.
   - Elective postings chosen as the SR do not receive elective preference bonuses to avoid double-counting.
 - Preference bonus: Rank-weighted (via `preference` weight) for elective preferences when the posting is selected and not chosen as SR.
