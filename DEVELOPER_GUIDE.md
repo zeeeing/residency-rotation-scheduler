@@ -1,6 +1,26 @@
 # Developer Guide
 
-This guide explains how to work on Residency Rotation Scheduler (R2S), covering setup, architecture, key workflows, and day-to-day commands for both the FastAPI backend and the Vite/React frontend.
+This guide explains how to work on Residency Rotation Scheduler (R2S), covering setup, architecture, key workflows, and day-to-day commands for both the FastAPI backend and the Vite/React frontend. Developed and validated primarily on macOS (Apple Silicon); Linux should work with the same Python/Node versions and OR-Tools wheels.
+
+## Table of contents
+
+- [Repository layout](#repository-layout)
+- [Branching model](#branching-model)
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Running locally](#running-locally)
+- [Local smoke test](#local-smoke-test)
+- [Data model and pipeline](#data-model-and-pipeline)
+- [API surface](#api-surface)
+- [Frontend architecture](#frontend-architecture)
+- [CSV schemas (quick reference)](#csv-schemas-quick-reference)
+- [Development workflows](#development-workflows)
+- [Common tasks](#common-tasks)
+- [Troubleshooting](#troubleshooting)
+- [API error responses](#api-error-responses)
+- [Release checklist](#release-checklist)
+- [Release/build pointers](#releasebuild-pointers)
+- [Production differences (Replit/hosted)](#production-differences-replithosted)
 
 ## Repository layout
 
@@ -9,6 +29,11 @@ This guide explains how to work on Residency Rotation Scheduler (R2S), covering 
 - `client/`: Vite + React + TypeScript UI with Tailwind. Entry point: `client/src/main.tsx`; routing lives in `client/src/App.tsx`.
 - `constraints.md`: Human-readable list of hard/soft constraints enforced by the solver.
 - `README.md`: Product overview; this guide focuses on developer workflows.
+
+## Branching model
+
+- **dev**: default integration branch; cut feature branches from `dev`, open PRs back into `dev`, and keep it green (run lint/build smoke checks before merging).
+- **prod**: protected release branch; merge only from `dev` during a release, then tag (e.g., `v1.0.0`). Avoid direct commits; fixes flow `feature -> dev -> prod`.
 
 ## Prerequisites
 
@@ -45,6 +70,13 @@ npm run dev -- --host --port 5173
 ```
 
 The client expects the API at `http://localhost:8000`. Override with `API_BASE_URL` in a Vite env file (e.g., `client/.env.local`).
+
+## Local smoke test
+
+1. Start the API and client as above.
+2. In the dashboard, trigger the sample CSV generator (it downloads the CSV files) or use representative CSVs for residents, history, preferences, SR preferences, postings, and optional leaves.
+3. Upload the CSVs, keep default weightages, and run the solver. Expect a successful timetable with optimisation scores populated; fix any schema errors shown in the UI or backend logs.
+4. Pin a few assignments, re-run to confirm pins hold, and download `final_timetable.csv` to verify `/api/download-csv`.
 
 ## Data model and pipeline
 
@@ -107,6 +139,44 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
 - Infeasible solves: check backend logs for constraint violations, revisit pins/leaves/capacity, and review `constraints.md`.
 - Upload failures: errors include the CSV label; ensure headers match the schemas above and files are UTF-8 encoded.
 - Stale data after pinning or saving: the API caches the last run; restart the FastAPI process to clear state if needed.
+
+### API error responses
+
+- **200 OK**
+  - `/api/solve`
+    - Response: `{ "success": true, "residents": [...], "resident_history": [...], "statistics": {...}, ... }` (per-resident `warnings` are present but currently returned as empty lists).
+    - Reason: Solve completed successfully.
+  - `/api/save`
+    - Response: same shape as `/api/solve`.
+    - Reason: Save succeeded and timetable recomputed.
+  - `/api/download-csv`
+    - Response: streamed `final_timetable.csv` with `Content-Disposition: attachment`.
+    - Reason: Provided payload already matches solver response shape.
+- **400 Bad Request**
+  - `/api/solve`
+    - Response: `{"detail": "...reason..."}`.
+    - Reason: Input validation failed. Examples: missing uploads (`"Missing required file 'residents'. Received type 'None'. Available keys: [...]"`), CSV header/format issues (`"[Residents CSV] Missing required column(s): mcr, name."`, `"[Resident History CSV] Invalid month_block '13' for resident ABC: must be between 1 and 12."`), duplicate keys (`"[Postings CSV] Duplicate posting_code(s) found: XYZ. Each posting must have a unique code."`), invalid capacity/duration, UTF-8 decode failures, or pinning without cache (`"No existing timetable found. Upload CSV files before pinning residents."`).
+  - `/api/save`
+    - Response: `{"detail": "missing resident_mcr"}` when MCR is blank; `{"detail": "No dataset loaded. Upload CSV and run optimiser first."}` when nothing is cached; or validation payload `{ "success": false, "warnings": [ { "code": "HC3", "description": "..." }, ... ] }`.
+    - Reason: Required fields missing or validation of the proposed schedule failed (constraint codes: INPUT, HC3, HC4, HC5, HC6, HC7a, HC7b, HC8, HC9, HC10, HC11, HC12).
+  - `/api/download-csv`
+    - Response: `{"detail": "Invalid API response shape"}`.
+    - Reason: Payload did not include valid `success`, `residents`, `resident_history`, or `optimisation_scores` fields.
+- **500 Internal Server Error**
+  - `/api/solve`
+    - Response: `{"detail": "Solver could not find a solution."}` or `{"detail": "Solver reported the model as invalid."}` or `{"detail": "Posting allocator service failed unexpectedly."}` or `{"detail": "Postprocess failed"}` (or other postprocess error string) or `{"detail": "Failed to process files"}`.
+    - Reason: Optimiser/postprocess crashed or returned failure after inputs were accepted.
+  - `/api/save`
+    - Response: `{"detail": "Postprocess failed"}` (or a more specific postprocess error string).
+    - Reason: Recomputing the timetable after save succeeded in parsing but failed during postprocessing.
+
+## Release checklist
+
+- Update [`CHANGELOG.md`](/CHANGELOG.md) and version mentions (this guide and [`README.md`](/README.md)).
+- Run `cd client && npm run lint && npm run build`; ensure the API accepts a representative dataset without errors.
+- Perform the local smoke test above and download `final_timetable.csv` as a sanity check.
+- For hosted runs, build the client (`npm run build`), set `VITE_API_BASE_URL`/`API_BASE_URL`, and confirm DB-backed session endpoints if `DATABASE_URL` is set.
+- Tag the release (e.g., `v1.0.0`) and capture links to any sample datasets used for verification.
 
 ## Release/build pointers
 

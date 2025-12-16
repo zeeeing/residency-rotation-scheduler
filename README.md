@@ -86,6 +86,10 @@ The client expects the API at `http://localhost:8000`.
 
 This project is currently maintained for internal use. If you have suggestions or find issues, feel free to open an issue or pull request with a clear description, sample inputs (CSV snippets), and the observed behaviour.
 
+## Changelog
+
+See `CHANGELOG.md` for release notes. The current version is **v1.0.0**.
+
 ## License
 
 No explicit license has been specified for this repository. If you are interested in using or extending this code outside your organisation, please contact the maintainer before redistribution.
