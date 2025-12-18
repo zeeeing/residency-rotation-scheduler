@@ -395,29 +395,34 @@ def allocate_timetable(
         mcr = resident["mcr"]
         for p in posting_codes:
             required_duration = posting_info[p]["required_block_duration"]
-            vars = [x[mcr][p][b] for b in blocks]
+            vars = [x[mcr][p][b] for b in blocks] # binary sequence 
 
             if required_duration > 1:
                 # build automaton: Deterministic Finite Automaton (DFA)
                 d = required_duration
-                INIT = 0
-                TERM = d + 1
+                INIT = 0  # this state means not currently in a run 
+                TERM = d + 1  # this state means finished a valid run
                 final_states = {INIT, TERM}
                 transitions = []
 
-                # from 0, you either stay on 0 or start a run (to state 1)
-                transitions.append((INIT, 0, INIT))  # stay in 0 on 0
-                transitions.append((INIT, 1, 1))  # start 1-block at state 1
+                # from state 0, you either stay on state 0 or start a run (to state 1)
+                transitions.append((INIT, 0, INIT))  # if 0, stay in state 0 
+                transitions.append((INIT, 1, 1))  # if 1, start 1-block 
 
+                # during a run
                 # build 1-streak: states 1 -> 2 -> ... -> d -> TERM
                 for i in range(1, d):
-                    transitions.append((i, 1, i + 1))  # continue streak
+                    transitions.append((i, 1, i + 1))  # if 1, continue streak
+                
+                # ending a run (exactly at length d)
+                # after d consecutive 1s, the next block must be 0
                 transitions.append((d, 0, TERM))
 
-                # In TERM you can either stay (on 0) or immediately start a new run (on 1)
+                # after a run
+                # In TERM state, you can either stay (on 0) or immediately start a new run (on 1)
                 transitions += [
-                    (TERM, 0, TERM),
-                    (TERM, 1, 1),
+                    (TERM, 0, TERM), # stay idle
+                    (TERM, 1, 1), # start new run 
                 ]
 
                 # Add automaton constraint
@@ -446,6 +451,7 @@ def allocate_timetable(
         if not offered:
             continue
 
+        # CCR forbidden in stage 1
         if stage1_blocks:
             for b in stage1_blocks:
                 for p in offered:
@@ -453,13 +459,15 @@ def allocate_timetable(
 
         ccr_runs = sum(posting_asgm_count[mcr][p] for p in offered)
 
+        # CCR forbidden is already done
         if done_ccr:
             for p in offered:
                 model.Add(posting_asgm_count[mcr][p] == 0)
+
         # if stage 3 blocks are present (resident could possibly have stage 2 blocks too)
         elif stage3_blocks:
             model.Add(ccr_runs == 1)
-        elif stage2_blocks:
+        elif stage2_blocks: # only stage 2 blocks exist
             model.Add(ccr_runs <= 1)
         else:
             model.Add(ccr_runs == 0)
@@ -473,8 +481,10 @@ def allocate_timetable(
                 x[mcr][p][b] for p in offered for b in blocks if b not in stage2_blocks
             )
             flag = model.NewBoolVar(f"{mcr}_ccr_stage2_bonus")
+            # flag = 1 ⇔ at least one CCR block is in Stage 2
             model.Add(ccr_stage2_blocks >= 1).OnlyEnforceIf(flag)
             model.Add(ccr_stage2_blocks == 0).OnlyEnforceIf(flag.Not())
+            # If flag = 1, CCR must not appear outside Stage 2
             model.Add(ccr_outside_stage2 == 0).OnlyEnforceIf(flag)
             ccr_stage2_bonus_terms.append(ccr_stage2_bonus_weight * flag)
 
@@ -537,6 +547,7 @@ def allocate_timetable(
         mcr = resident["mcr"]
 
         # collect all MICU/RCCM postings and their institutions
+        # each tuple is (posting_code, institution). Eg ("MICU (TTSH)", "TTSH")
         micu_rccm_with_inst = [
             (p, p.split(" (")[1].rstrip(")"))
             for p in posting_codes
@@ -553,7 +564,7 @@ def allocate_timetable(
                     model.Add(selection_flags[mcr][p1] + selection_flags[mcr][p2] <= 1)
 
     # Hard Constraint 7b: if MICU and RCCM are assigned, they must form one contiguous block
-    DEC, JAN = 6 - 1, 7 - 1  # M is 0-indexed
+    DEC, JAN = 6 - 1, 7 - 1  # M is 0-indexed; Block 6 (Dec) is index 5; Block 7 (Jan) is index 6
     for resident in residents:
         mcr = resident["mcr"]
 
@@ -562,7 +573,7 @@ def allocate_timetable(
         ]
 
         # build one BoolVar per block: 1 if block b is MICU or RCCM, else 0
-        M = []
+        M = [] # boolean sequence
         for b in blocks:
             Mb = model.NewBoolVar(f"{mcr}_MICU_RCCM_at_block_{b}")
 
@@ -571,7 +582,8 @@ def allocate_timetable(
             M.append(Mb)
 
         # do not cross over Dec -> Jan
-        # at least one of these must be 0, so you can't have a 1 in Dec and a 1 in Jan
+        # at least one of these must be 0, so you can't have a 1 in Dec and a 1 in Jan. 
+        # (M[DEC], M[JAN]) cannot be (1, 1)
         model.AddBoolOr(
             [
                 M[DEC].Not(),
