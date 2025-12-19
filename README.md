@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Residency Rotation Scheduler (R2S) is a constraint-based optimisation tool that uses Google OR-Tools to construct fair, feasible residency rotation timetables. It ingests structured CSV inputs describing residents, postings, historical rotations, preferences, and leave, and then searches for a timetable that satisfies hard rules (e.g. posting capacities, required block durations, stage rules) while optimising soft goals such as resident preferences and balanced posting utilisation. The application is designed for iterative use: users can tune weightages, pin specific assignments, re-run the solver, and export the final timetable for downstream systems.
+Residency Rotation Scheduler (R2S) is a constraint-based optimisation tool that uses Google OR-Tools to construct fair, feasible residency rotation timetables ([example](https://www.nhghealth.com.sg/for-healthcare-professionals/clinical-education/trainees/postgraduate-education/medical-residency/postgraduate-year-1-and-residency-programmes-internal-medicine)). It ingests structured CSV inputs describing residents, postings, historical rotations, preferences, and leave, and then searches for a timetable that satisfies hard rules (e.g. posting capacities, required block durations, stage rules) while optimising soft goals such as resident preferences and balanced posting utilisation. The application is designed for iterative use: users can tune weightages, pin specific assignments, re-run the solver, and export the final timetable for downstream systems.
 
 ## Key Features
 

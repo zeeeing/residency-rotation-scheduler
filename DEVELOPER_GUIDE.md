@@ -98,10 +98,16 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
    - `server/main.py` keeps the latest inputs and API response in `Store`, enabling pinning and saves without re-uploading CSVs.
 
 ## API surface
-
+Can be viewed at http://127.0.0.1:8000/docs 
 - `POST /api/solve` (multipart form): files named `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, optional `resident_leaves`; fields `weightages` (JSON), `pinned_mcrs` (JSON array of MCRs), `max_time_in_minutes` (int). Response contains `success`, `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, `resident_leaves`, `weightages`, and `statistics`.
 - `POST /api/save` (JSON): `{ resident_mcr: string, current_year: [{ month_block, posting_code }] }`. Uses cached dataset; returns the same shape as `/api/solve` on success.
 - `POST /api/download-csv` (JSON): expects `success`, `residents`, `resident_history`, `optimisation_scores`; returns a CSV blob.
+
+## Tech Stack
+- **Frontend**: React, Vite, Typescript 
+- **Backend**: [Google OR-Tools](https://developers.google.com/optimization/cp/cp_solver), Python
+  - Reference: [Scheduling](https://developers.google.com/optimization/scheduling/employee_scheduling)
+- **Deployment**: [Replit](https://replit.com/deployments)
 
 ## Frontend architecture
 
@@ -111,7 +117,7 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
 - **Components**: Key UI pieces under `client/src/components/` (file upload, weightage selector, resident timetable, statistics tables). `generateSampleCSV` can be triggered from the dashboard to download example datasets for quick smoke tests.
 - **Styling**: Tailwind via `index.css`; layout composed in `Layout.tsx` with sidebar shell components under `components/ui`.
 
-## CSV schemas (quick reference)
+## Input CSV schemas (quick reference)
 
 - Residents: `mcr`, `name`, `resident_year`, `career_blocks_completed`.
 - Resident History: `mcr`, `year`, `month_block` (1–12), `career_block`, `posting_code`, `is_current_year`, `is_leave`, `leave_type`.
