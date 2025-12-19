@@ -980,7 +980,7 @@ def allocate_timetable(
             # Allow shortfall when unmet == 1
             model.Add(hist_done + assigned <= required - 1).OnlyEnforceIf(unmet_flag)
 
-    # Soft Constraint 3: SR preference
+    # Soft Constraint 4: SR preference
     sr_bonus_context: Dict[str, Dict] = {}
     sr_choice_flags: Dict[str, Dict[str, cp_model.BoolVar]] = {}
     for resident in residents:
@@ -1167,7 +1167,7 @@ def allocate_timetable(
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
 
-    # preference bonus
+    # Soft Constraint 5: preference bonus
     preference_bonus_terms = []
     preference_bonus_weight = weightages.get("preference") or 0
 
@@ -1263,7 +1263,7 @@ def allocate_timetable(
                             preference_bonus_weight * bonus_flag
                         )
 
-    # seniority bonus
+    # Soft Constraint 6: seniority bonus
     seniority_bonus_terms = []
     seniority_bonus_weight = weightages.get("seniority") or 0
 
@@ -1296,7 +1296,7 @@ def allocate_timetable(
         for base, slack in base_map.items():
             core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
 
-    # core prioritisation bonus
+    # Soft Constraint 7: core prioritisation bonus
     core_bonus_terms = []
     core_bonus_weight = 5
 
@@ -1305,6 +1305,7 @@ def allocate_timetable(
         for p in CORE_POSTINGS:
             core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
+    # Soft Constraint 8: ED/GRM/GM bonuses
     # ED + GRM pairing bonus
     ed_grm_pair_bonus_terms = []
     ed_grm_pair_bonus_weight = 5
@@ -1437,7 +1438,7 @@ def allocate_timetable(
 
         ed_grm_gm_bundle_bonus_terms.append(ed_grm_gm_bundle_bonus_weight * flag)
 
-    # discourage empty blocks (OFF) unless on leave
+    # Soft Constraint 10: discourage empty blocks (OFF) unless on leave
     off_penalty_terms = []
     off_penalty_weight = 99
     for resident in residents:
@@ -1447,7 +1448,7 @@ def allocate_timetable(
                 continue
             off_penalty_terms.append(off_penalty_weight * off_or_leave[mcr][b])
 
-    # Objective
+    # Soft Constraint 11: Objective
     model.Maximize(
         sum(gm_ktph_bonus_terms)  # static, 1
         + sum(ccr_stage2_bonus_terms)  # static, 5
