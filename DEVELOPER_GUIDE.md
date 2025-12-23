@@ -105,7 +105,7 @@ Can be viewed at http://127.0.0.1:8000/docs
 
 ## Tech Stack
 - **Frontend**: React, Vite, Typescript 
-- **Backend**: [Google OR-Tools](https://developers.google.com/optimization/cp/cp_solver), Python
+- **Backend**: FastAPI, [Google OR-Tools](https://developers.google.com/optimization/cp/cp_solver), Python
   - Reference: [Scheduling](https://developers.google.com/optimization/scheduling/employee_scheduling)
 - **Deployment**: [Replit](https://replit.com/deployments)
 
