@@ -22,6 +22,7 @@ def allocate_timetable(
     resident_sr_preferences: List[Dict],
     postings: List[Dict],
     weightages: Dict,
+    balancing_deviations: Dict,  # {"Rehab (TTSH)":1,"RAI (TTSH)":1}
     resident_leaves: Optional[List[Dict]] = None,
     pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
     max_time_in_minutes: Optional[int] = None,
@@ -877,7 +878,8 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 == min_h1 + 0)
+            # TODO: Change 0 to variable
+            model.Add(max_h1 == min_h1 + 0)  
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -886,6 +888,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
+            # TODO: Change 0 to variable
             model.Add(max_h2 == min_h2 + 0)
 
     ###########################################################################

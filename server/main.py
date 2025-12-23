@@ -86,6 +86,7 @@ async def solve(request: Request):
             resident_sr_preferences=solver_payload["resident_sr_preferences"],
             postings=solver_payload["postings"],
             weightages=solver_payload["weightages"],
+            balancing_deviations=solver_payload["balancing_deviations"],
             resident_leaves=solver_payload.get("resident_leaves", []),
             pinned_assignments=solver_payload.get("pinned_assignments", []),
             max_time_in_minutes=solver_payload.get("max_time_in_minutes"),
