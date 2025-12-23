@@ -7,7 +7,7 @@ All constraints below are implemented in `server/services/posting_allocator.py`.
 - Variable binding: For each resident/posting, block-level vars, selection flags, and run-count vars are tied together (`Σ blocks = run_count × required_block_duration`; `selected ⇔ run_count ≥ 1`).
 - Pins: Explicit pinned rows and current-year resident-history rows fix `x[mcr][posting][block] = 1`.
 - Leaves: Normalised (deduped) leaves force `OFF` in those blocks and reserve capacity when a leave specifies a posting code.
-- Career progression: Stage per block advances only on worked blocks (leave blocks pause the counter); this drives stage-aware rules (CCR, GM caps, SR window). Flags capture whether stages 1/2 actually finish within the AY so stage-completion rules can switch between hard and soft forms.
+- Career progression: Stage per block advances only on worked blocks (leave blocks pause the counter); this drives stage-aware rules (CCR, GM caps, SR window).
 
 ## Hard Constraints
 
@@ -26,15 +26,14 @@ All constraints below are implemented in `server/services/posting_allocator.py`.
 13. HC12 — ED↔GRM contiguity: If ED or GRM are present, all ED+GRM blocks must form one contiguous run.
 14. HC13 — ED↔GRM↔GM contiguity: If ED, GRM, and GM all appear, their combined blocks must form one contiguous run.
 15. HC14 — (Disabled) Guardrail that would force 1 ED and 1 GRM when neither is done historically.
-16. HC15 — MICU/RCCM by stage: Stage 1 may optionally deliver pack #1 (1 MICU, 2 RCCM). If pack #1 not done historically, stage 1+2 together must deliver pack #1 when stage 2 finishes within the AY; if stage 2 does not finish this year the pack becomes a soft penalty instead. If pack #1 is already done and stage 2 blocks exist, stage 2 may optionally deliver pack #2 (2 MICU, 1 RCCM). Stage 3 assigns exactly the remaining MICU and RCCM blocks needed to reach three each after history.
+16. HC15 — MICU/RCCM by stage: Stage 1 may optionally deliver pack #1 (1 MICU, 2 RCCM). If pack #1 not done historically, stage 1+2 together must deliver pack #1. If pack #1 is already done and stage 2 blocks exist, stage 2 may optionally deliver pack #2 (2 MICU, 1 RCCM). Stage 3 assigns exactly the remaining MICU and RCCM blocks needed to reach three each after history.
 17. HC16 — Balancing within halves: For every posting except GM/ED/GRM, resident counts per block are equal within blocks 1–6 and within blocks 7–12 (leave-reserved slots are treated as occupied).
 
 ## Soft Constraints and Objective Terms
 
 - Elective requirements:
-  - Stage 2: If stage 2 finishes this AY, must have ≥1 elective completed to date (history + current year). If stage 2 continues into next AY, missing this minimum is allowed with a penalty; if elective prefs exist, a second elective (history + current year) earns a bonus.
+  - Stage 2: Must have ≥1 elective completed to date (history + current year). If elective prefs exist, a second elective (history + current year) earns a bonus.
   - Stage 3: Aim for five total electives; a slack var (`*_elective_req_unmet`) incurs `elective_shortfall_penalty` when short.
-- MICU/RCCM pack (stage 2 incomplete): When stage 2 does not finish in the AY and pack #1 is still outstanding, missing the 1 MICU / 2 RCCM combination is allowed with a `core_shortfall_penalty` slack.
 - Core requirements (stage 3): For each unmet core base, enforce equality to the requirement unless a slack var (`{base}_req_unmet`) is paid, incurring `core_shortfall_penalty`.
 - CCR timing bonus: Bonus for completing CCR during stage 2 and nowhere else (when not yet done).
 - SR preference constraints and bonuses:
