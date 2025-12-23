@@ -207,10 +207,15 @@ def allocate_timetable(
     resident_leaves = normalised_leaves
 
     # 10. derive career progress per resident
+    STAGE_BLOCKS = 12
+    STAGE1_END = STAGE_BLOCKS
+    STAGE2_END = STAGE_BLOCKS * 2
+    STAGE3_END = STAGE_BLOCKS * 3
+
     def stage_from_blocks(blocks_completed: int) -> int:
-        if blocks_completed < 12:
+        if blocks_completed < STAGE1_END:
             return 1
-        if blocks_completed < 24:
+        if blocks_completed < STAGE2_END:
             return 2
         return 3
 
@@ -235,10 +240,16 @@ def allocate_timetable(
             progress_counter += 1
             career_blocks_by_block[b] = progress_counter
 
+        stage1_finishes = completed_blocks < STAGE1_END and progress_counter >= STAGE1_END
+        stage2_finishes = completed_blocks < STAGE2_END and progress_counter >= STAGE2_END
+        stage3_finishes = completed_blocks < STAGE3_END and progress_counter >= STAGE3_END
         stage = stage_from_blocks(completed_blocks)
         career_progress[mcr] = {
             "completed_blocks": completed_blocks,
             "stage": stage,
+            "stage1_finishes": stage1_finishes,
+            "stage2_finishes": stage2_finishes,
+            "stage3_finishes": stage3_finishes,
             "stages_by_block": stages_by_block,
             "career_blocks_by_block": career_blocks_by_block,
         }
@@ -728,6 +739,7 @@ def allocate_timetable(
     #         model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
     # Hard Constraint 15: enforce MICU/RCCM minimum requirements by career stage
+    micu_rccm_pack_shortfall_flags: List[cp_model.BoolVar] = []
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -736,6 +748,8 @@ def allocate_timetable(
         stage2_blocks = [b for b in blocks if stages_by_block.get(b) == 2]
         stage3_blocks = [b for b in blocks if stages_by_block.get(b) == 3]
         stages_present = set(stages_by_block.values())
+        stage2_finishes = bool(career_progress[mcr].get("stage2_finishes"))
+        stage3_finishes = bool(career_progress[mcr].get("stage3_finishes"))
 
         # count assigned blocks for the current year
         micu_stage1 = (
@@ -820,15 +834,40 @@ def allocate_timetable(
             # else do first pack if first pack not done
             first_pack_done = (hist_micu == 1) and (hist_rccm == 2)
             if not first_pack_done:
-                model.Add(micu_stage1 + micu_stage2 == 1)
-                model.Add(rccm_stage1 + rccm_stage2 == 2)
+                if stage2_finishes:
+                    model.Add(micu_stage1 + micu_stage2 == 1)
+                    model.Add(rccm_stage1 + rccm_stage2 == 2)
+                else:
+                    micu_pack1_shortfall = model.NewBoolVar(
+                        f"{mcr}_micu_pack1_shortfall"
+                    )
+                    rccm_pack1_shortfall = model.NewBoolVar(
+                        f"{mcr}_rccm_pack1_shortfall"
+                    )
+
+                    model.Add(micu_stage1 + micu_stage2 >= 1).OnlyEnforceIf(
+                        micu_pack1_shortfall.Not()
+                    )
+                    model.Add(micu_stage1 + micu_stage2 <= 0).OnlyEnforceIf(
+                        micu_pack1_shortfall
+                    )
+
+                    model.Add(rccm_stage1 + rccm_stage2 >= 2).OnlyEnforceIf(
+                        rccm_pack1_shortfall.Not()
+                    )
+                    model.Add(rccm_stage1 + rccm_stage2 <= 1).OnlyEnforceIf(
+                        rccm_pack1_shortfall
+                    )
+
+                    micu_rccm_pack_shortfall_flags.append(micu_pack1_shortfall)
+                    micu_rccm_pack_shortfall_flags.append(rccm_pack1_shortfall)
             elif stage2_blocks:
                 flag = model.NewBoolVar(f"{mcr}_do_micu_rccm_pack_s2")
                 model.Add(micu_stage2 == 2).OnlyEnforceIf(flag)
                 model.Add(rccm_stage2 == 1).OnlyEnforceIf(flag)
                 model.Add(micu_stage2 == 0).OnlyEnforceIf(flag.Not())
                 model.Add(rccm_stage2 == 0).OnlyEnforceIf(flag.Not())
-        if 3 in stages_present:
+        if 3 in stages_present and stage3_finishes:
             micu_needed = max(0, 3 - hist_micu)
             rccm_needed = max(0, 3 - hist_rccm)
 
@@ -885,10 +924,12 @@ def allocate_timetable(
     s2_elective_bonus_weight = 1
 
     elective_shortfall_penalty_flags = {}
+    stage2_elective_shortfall_flags = {}
 
     for resident in residents:
         mcr = resident["mcr"]
         stages_present = set(career_progress[mcr].get("stages_by_block", {}).values())
+        stage2_finishes = bool(career_progress[mcr].get("stage2_finishes"))
 
         # current-year elective selections count
         selection_count = sum(selection_flags[mcr][p] for p in ELECTIVE_POSTINGS)
@@ -903,8 +944,17 @@ def allocate_timetable(
             s1_hist_electives = get_unique_electives_completed(
                 posting_progress.get(mcr, {}), posting_info
             )
+            s1_hist_count = len(s1_hist_electives)
+            total_s1_s2 = s1_hist_count + selection_count
 
-            model.Add(len(s1_hist_electives) + selection_count >= 1)
+            if s1_hist_count < 1:
+                if stage2_finishes:
+                    model.Add(total_s1_s2 >= 1)
+                else:
+                    unmet = model.NewBoolVar(f"{mcr}_s2_elective_req_unmet")
+                    stage2_elective_shortfall_flags[mcr] = unmet
+                    model.Add(total_s1_s2 >= 1).OnlyEnforceIf(unmet.Not())
+                    model.Add(total_s1_s2 == 0).OnlyEnforceIf(unmet)
 
             if has_prefs:
                 # grant a bonus for more than 1 accumulated electives only if preference given
@@ -917,7 +967,7 @@ def allocate_timetable(
                 )
                 s2_elective_bonus_terms.append(s2_elective_bonus_weight * flag)
 
-        if 3 in stages_present:
+        if 3 in stages_present and stage3_finishes:
             hist = get_unique_electives_completed(
                 posting_progress.get(mcr, {}), posting_info
             )
@@ -936,6 +986,7 @@ def allocate_timetable(
         r
         for r in residents
         if 3 in set(career_progress[r["mcr"]].get("stages_by_block", {}).values())
+        and bool(career_progress[r["mcr"]].get("stage3_finishes"))
     ]
 
     core_shortfall = {}
@@ -1271,6 +1322,12 @@ def allocate_timetable(
         weightages.get("elective_shortfall_penalty") or 0
     )
 
+    stage2_elective_shortfall_penalty_terms = []
+    for mcr, flag in stage2_elective_shortfall_flags.items():
+        stage2_elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * flag
+        )
+
     for mcr in elective_shortfall_penalty_flags:
         elective_shortfall_penalty_terms.append(
             elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
@@ -1283,6 +1340,10 @@ def allocate_timetable(
     for mcr, base_map in core_shortfall.items():
         for base, slack in base_map.items():
             core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+
+    micu_rccm_pack_penalty_terms = [
+        core_shortfall_penalty_weight * flag for flag in micu_rccm_pack_shortfall_flags
+    ]
 
     # core prioritisation bonus
     core_bonus_terms = []
@@ -1444,8 +1505,10 @@ def allocate_timetable(
         + sum(sr_preference_bonus_terms)
         + sum(sr_window_bonus_terms)
         + sum(seniority_bonus_terms)
+        - sum(stage2_elective_shortfall_penalty_terms)
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
+        - sum(micu_rccm_pack_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
         + sum(ed_grm_pair_bonus_terms)  # static, 5
         + sum(three_gm_bonus_terms)  # static, 5
