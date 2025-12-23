@@ -12,6 +12,7 @@ import type {
 import CohortStatistics from "../components/CohortStatistics";
 import ErrorAlert from "../components/ErrorAlert";
 import FileUpload from "../components/FileUpload";
+import PostingBalancingDeviationSelector from "@/components/PostingBalancingDeviationSelector";
 import PostingUtilTable from "../components/PostingUtilTable";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
@@ -50,6 +51,7 @@ const HomePage: React.FC = () => {
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
   });
+  const [postingDeviation, setPostingDeviation] = useState<Record<string, number>>({});
   const [maxTimeInMinutes, setMaxTimeInMinutes] = useState<string>("20");
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
     try {
@@ -239,6 +241,8 @@ const HomePage: React.FC = () => {
 
       {/* weightage selector */}
       <WeightageSelector value={weightages} setValue={setWeightages} />
+
+      <PostingBalancingDeviationSelector value={postingDeviation} setValue={setPostingDeviation} />
 
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex flex-col gap-1 max-w-xs">
