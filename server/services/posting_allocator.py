@@ -207,10 +207,15 @@ def allocate_timetable(
     resident_leaves = normalised_leaves
 
     # 10. derive career progress per resident
+    STAGE_BLOCKS = 12
+    STAGE1_END = STAGE_BLOCKS
+    STAGE2_END = STAGE_BLOCKS * 2
+    STAGE3_END = STAGE_BLOCKS * 3
+
     def stage_from_blocks(blocks_completed: int) -> int:
-        if blocks_completed < 12:
+        if blocks_completed < STAGE1_END:
             return 1
-        if blocks_completed < 24:
+        if blocks_completed < STAGE2_END:
             return 2
         return 3
 
@@ -235,14 +240,16 @@ def allocate_timetable(
             progress_counter += 1
             career_blocks_by_block[b] = progress_counter
 
-        stage1_finishes = completed_blocks < 12 and progress_counter >= 12
-        stage2_finishes = completed_blocks < 24 and progress_counter >= 24
+        stage1_finishes = completed_blocks < STAGE1_END and progress_counter >= STAGE1_END
+        stage2_finishes = completed_blocks < STAGE2_END and progress_counter >= STAGE2_END
+        stage3_finishes = completed_blocks < STAGE3_END and progress_counter >= STAGE3_END
         stage = stage_from_blocks(completed_blocks)
         career_progress[mcr] = {
             "completed_blocks": completed_blocks,
             "stage": stage,
             "stage1_finishes": stage1_finishes,
             "stage2_finishes": stage2_finishes,
+            "stage3_finishes": stage3_finishes,
             "stages_by_block": stages_by_block,
             "career_blocks_by_block": career_blocks_by_block,
         }
@@ -742,6 +749,7 @@ def allocate_timetable(
         stage3_blocks = [b for b in blocks if stages_by_block.get(b) == 3]
         stages_present = set(stages_by_block.values())
         stage2_finishes = bool(career_progress[mcr].get("stage2_finishes"))
+        stage3_finishes = bool(career_progress[mcr].get("stage3_finishes"))
 
         # count assigned blocks for the current year
         micu_stage1 = (
@@ -859,7 +867,7 @@ def allocate_timetable(
                 model.Add(rccm_stage2 == 1).OnlyEnforceIf(flag)
                 model.Add(micu_stage2 == 0).OnlyEnforceIf(flag.Not())
                 model.Add(rccm_stage2 == 0).OnlyEnforceIf(flag.Not())
-        if 3 in stages_present:
+        if 3 in stages_present and stage3_finishes:
             micu_needed = max(0, 3 - hist_micu)
             rccm_needed = max(0, 3 - hist_rccm)
 
@@ -959,7 +967,7 @@ def allocate_timetable(
                 )
                 s2_elective_bonus_terms.append(s2_elective_bonus_weight * flag)
 
-        if 3 in stages_present:
+        if 3 in stages_present and stage3_finishes:
             hist = get_unique_electives_completed(
                 posting_progress.get(mcr, {}), posting_info
             )
@@ -978,6 +986,7 @@ def allocate_timetable(
         r
         for r in residents
         if 3 in set(career_progress[r["mcr"]].get("stages_by_block", {}).values())
+        and bool(career_progress[r["mcr"]].get("stage3_finishes"))
     ]
 
     core_shortfall = {}
