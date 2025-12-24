@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 
-# helpter functions for deepcopy and building postprocess payload
+# helper functions for deepcopy and building postprocess payload
 def _deepcopy(value: Any) -> Any:
     return copy.deepcopy(value)
 
