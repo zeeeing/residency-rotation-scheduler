@@ -148,7 +148,7 @@ Refer to `# DEFINE HARD CONSTRAINTS` section of the code in [`server/services/po
   - 3 MICU + 3 RCCM total (including history)
 
 #### HC16 — Balancing within halves and balancing deviation per posting 
-- Applies to every posting except GM, ED, GRM
+- Set GM, ED, GRM to a high value (eg 4) to ensure a solution.
 - Within blocks 1-6 and within blocks 7-12, the user can optionally input how much imbalance is allowed between the maximum and minimum number of residents assigned across 6 blocks. 
   - 0 <= (max - min) <= deviation
 - Else, by default (no input on the balancing deviation), the imbalance is 0. Resident counts per block are equal within blocks 1–6 and within blocks 7–12 (leave-reserved slots are treated as occupied).

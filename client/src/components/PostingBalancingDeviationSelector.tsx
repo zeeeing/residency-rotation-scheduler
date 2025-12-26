@@ -85,7 +85,7 @@ const PostingBalancingDeviationSelector: React.FC<
           </h2>
           <p className="text-sm text-muted-foreground">
             To allow uneven distribution of residents across blocks for
-            any posting (except GM, ED, GRM). If deviation is more than posting capacity, 
+            any posting. If deviation is more than posting capacity, 
             it is set to posting capacity value.
           </p>
         </div>
@@ -97,7 +97,7 @@ const PostingBalancingDeviationSelector: React.FC<
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Configure posting deviations</DialogTitle>
               <DialogDescription>
@@ -155,7 +155,7 @@ const PostingBalancingDeviationSelector: React.FC<
             </div>
 
             {/* configured list */}
-            <div className="flex flex-col gap-3 mt-4">
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 mt-4 pr-1">
               {configuredPostings.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   No deviations configured.
