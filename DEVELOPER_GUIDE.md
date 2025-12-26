@@ -99,13 +99,16 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
    - `server/main.py` keeps the latest inputs and API response in `Store`, enabling pinning and saves without re-uploading CSVs.
 
 ## API surface
-Can be viewed at http://127.0.0.1:8000/docs 
+
+Can be viewed at http://127.0.0.1:8000/docs
+
 - `POST /api/solve` (multipart form): files named `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, optional `resident_leaves`; fields `weightages` (JSON), `pinned_mcrs` (JSON array of MCRs), `max_time_in_minutes` (int). Response contains `success`, `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, `resident_leaves`, `weightages`, and `statistics`.
 - `POST /api/save` (JSON): `{ resident_mcr: string, current_year: [{ month_block, posting_code }] }`. Uses cached dataset; returns the same shape as `/api/solve` on success.
 - `POST /api/download-csv` (JSON): expects `success`, `residents`, `resident_history`, `optimisation_scores`; returns a CSV blob.
 
 ## Tech Stack
-- **Frontend**: React, Vite, Typescript 
+
+- **Frontend**: React, Vite, Typescript
 - **Backend**: FastAPI, [Google OR-Tools](https://developers.google.com/optimization/cp/cp_solver), Python
   - Reference: [Scheduling](https://developers.google.com/optimization/scheduling/employee_scheduling)
 - **Deployment**: [Replit](https://replit.com/deployments)
@@ -128,9 +131,11 @@ Can be viewed at http://127.0.0.1:8000/docs
 - Resident Leaves (optional): `mcr`, `month_block`, `leave_type`, `posting_code` (reserves capacity when set).
 
 ## Data Structure of helpers in `posting_allocator.py`
+
 Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.py`](./server/services/posting_allocator.py).
 
 #### `posting_info`
+
 - Map of posting codes to posting info
 - **Type**: `Dict[str, Dict[str,Any]]`
 - **Shape**:
@@ -140,7 +145,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
     "posting_name": str,
     "posting_type": str,
     "max_residents": int,
-    "required_block_duration": int 
+    "required_block_duration": int
   }
   ```
 - **Example**:
@@ -158,7 +163,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `posting_codes`
-- List of posting codes 
+
+- List of posting codes
 - **Type**: `List[str]`
 - **Example**:
   ```
@@ -173,7 +179,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `CORE_POSTINGS`
-- Filtered list of `posting_codes`, of core postings 
+
+- Filtered list of `posting_codes`, of core postings
 - **Type**: `List[str]`
 - **Example**:
   ```
@@ -181,13 +188,14 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
     CVM (TTSH),
     ED (TTSH),
     GM (TTSH),
-    GRM (TTSH), 
+    GRM (TTSH),
     ...
   ]
   ```
 
 #### `ELECTIVE_POSTINGS`
-- Filtered list of `posting_codes`, of elective postings 
+
+- Filtered list of `posting_codes`, of elective postings
 - **Type**: `List[str]`
 - **Example**:
   ```
@@ -201,6 +209,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `ELECTIVE_BASE_CODES`
+
 - Unique list of elective posting codes without variants (without institution names)
 - **Type**: `List[str]`
 - **Example**:
@@ -215,7 +224,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `pref_map`
-- Map of resident `mcr` to their elective preferences 
+
+- Map of resident `mcr` to their elective preferences
 - **Type**: `Dict[str, Dict[int,str]]`
 - **Shape**:
   ```
@@ -237,6 +247,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `sr_pref_map`
+
 - Map of resident `mcr` to their SR preferences (base postings)
 - **Type**: `Dict[str, Dict[int,str]]`
 - **Shape**:
@@ -259,6 +270,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `pins_by_resident`
+
 - Map of resident `mcr` to the block and posting code
 - **Type**: `Dict[str, Dict[int,str]]`
 - **Shape**:
@@ -281,14 +293,15 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `resident_history`
+
 - List of resident history (=`filtered_resident_history`)
 - **Type**: `List[Dict]`
 - **Shape**:
   ```
   resident_history = [
     {
-        "mcr": str, 
-        "year": int          
+        "mcr": str,
+        "year": int
         "month_block": int,
         "career_block": int,
         "posting_code": str,
@@ -316,13 +329,14 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
 
 #### `resident_leaves` (= `normalised_leaves`)
+
 - List of leave info, includes `derived_leave_rows` (same structure)
 - **Type**: `List[Dict[str,Any]]`
 - **Shape**:
   ```
   derived_leave_rows = [
     {
-      "mcr": str,           
+      "mcr": str,
       "month_block": int,
       "posting_code": str,
       "leave_type": str,
@@ -342,8 +356,9 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ]
   ```
 
-#### `posting_progress` 
-- Map of each resident to their posting code and posting progress 
+#### `posting_progress`
+
+- Map of each resident to their posting code and posting progress
 - **Type**: `Dict[str, Dict[str, Dict[str, int]]]`
 - **Shape**:
   ```
@@ -370,7 +385,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   }
   ```
 
-#### `leave_off_blocks` 
+#### `leave_off_blocks`
+
 - List of unique tuples of `mcr` and leave block
 - **Type**: `Set[Tuple[str, int]]`
 - **Shape**:
@@ -393,7 +409,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   }
   ```
 
-#### `leave_map` 
+#### `leave_map`
+
 - Map of `mcr` to month block with leave type and posting code
 - **Type**: `Dict[str, Dict[int, Dict[str,str]]]`
 - **Shape**:
@@ -418,7 +435,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   }
   ```
 
-#### `leave_quota_usage` 
+#### `leave_quota_usage`
+
 - Tracks how many posting slots are consumed by leave, per posting and per block
 - **Type**: `Dict[str, Dict[int, int]]`
 - **Shape**:
@@ -438,7 +456,8 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   }
   ```
 
-#### `career_progress` 
+#### `career_progress`
+
 - **Type**: `Dict[str, Dict[str, Any]]`
 - **Shape**:
   ```
@@ -446,7 +465,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
     "completed_blocks": int,
     "stage": int,
     "stages_by_block": Dict[int, int],
-    "career_blocks_by_block": Dict[int, Optional[int]]  
+    "career_blocks_by_block": Dict[int, Optional[int]]
   }
   ```
 - **Example**:
@@ -458,39 +477,18 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
       "stages_by_block": {
         1 : 2,
         2 : 2,
-        3 : 2, 
+        3 : 2,
         4 : 3,
-        ... 
+        ...
       }
       "career_blocks_by_block": {
         1 : 22,
         2 : 23,
-        3 : None, 
+        3 : None,
         4 : 24,
-        ... 
+        ...
       }
-    }  
-  }
-  ```
-
-#### `hist_sr_19_24` 
-- Per-resident set of SR base postings completed in career blocks 19–24
-- **Type**: `Dict[str, Set[str]]`
-- **Shape**:
-  ```
-  hist_sr_19_24[mcr] = {
-    base_posting_code: str
-  }
-  ```
-- **Example**:
-  ```
-  hist_sr_19_24 = {
-    "M000001A": {
-      "GM",
-      "Derm",
-      "Renal"
-    },
-    ...
+    }
   }
   ```
 
