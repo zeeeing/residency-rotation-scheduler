@@ -889,10 +889,25 @@ def allocate_timetable(
 
     # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
     for p in posting_codes:
+        print(f"HC16, posting code: {p}")
+        print(balancing_deviations)
+        print(p)
+
         # omit GM and ED from balancing constraint
         base_posting_code = p.split(" (")[0]
         if base_posting_code in ["GM", "ED", "GRM"]:
             continue
+
+        # get the balance deviation set by the user 
+        balancing_deviation = balancing_deviation = balancing_deviations.get(p, 0)
+        print(f"balancing_deviation: {balancing_deviation}")
+
+        # get the max residents allowed, to ensure the balance deviation does not exceed it
+        max_residents = posting_info[p]["max_residents"] 
+        print(f"max residents: {max_residents}")
+
+        # ensure balancing deviation is within posting capacity
+        delta = max(0, min(balancing_deviation, max_residents))
 
         # number of residents assigned per month should be balanced across the months it is active in
         # handled independently for each half of the year
@@ -917,8 +932,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            # TODO: Change 0 to variable
-            model.Add(max_h1 == min_h1 + 0)  
+            model.Add(max_h1 - min_h1 <= delta)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -927,8 +941,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            # TODO: Change 0 to variable
-            model.Add(max_h2 == min_h2 + 0)
+            model.Add(max_h2 - min_h2 <= delta)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES

@@ -85,7 +85,7 @@ const PostingBalancingDeviationSelector: React.FC<
           </h2>
           <p className="text-sm text-muted-foreground">
             Optionally allow uneven distribution of residents across blocks for
-            selected postings.
+            selected postings (except GM, ED, GRM).
           </p>
         </div>
 
@@ -100,7 +100,7 @@ const PostingBalancingDeviationSelector: React.FC<
             <DialogHeader>
               <DialogTitle>Configure posting deviations</DialogTitle>
               <DialogDescription>
-                Set how much imbalance is allowed between the maximum and
+                Set how much imbalance (less than or equal to posting capacity) is allowed between the maximum and
                 minimum number of residents assigned across 6 blocks.
               </DialogDescription>
             </DialogHeader>

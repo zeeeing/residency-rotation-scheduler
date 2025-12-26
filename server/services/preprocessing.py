@@ -176,6 +176,29 @@ def parse_weightages(
     merged.update(data or {})
     return merged
 
+def parse_balancing_deviations(
+    raw: Any, fallback: Optional[Dict[str, int]] = None
+) -> Dict[str, int]:
+    fallback = {**(fallback or {})}
+    if raw is None:
+        return fallback
+    try:
+        if isinstance(raw, str) and raw.strip():
+            data = json.loads(raw)
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            data = {}
+    except json.JSONDecodeError:
+        data = {}
+    merged = fallback.copy()
+    merged.update({
+        k: int(v)
+        for k, v in (data or {}).items()
+        if isinstance(k, str)
+    })
+    return merged
+
 
 def parse_pinned_list(raw: Any) -> List[str]:
     if raw is None:
@@ -535,7 +558,7 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
     _validate_no_duplicate_posting_codes(postings)
     _validate_posting_capacity_and_duration(postings)
 
-    balancing_deviations = form.get("balancing_deviations")
+    balancing_deviations = parse_balancing_deviations(form.get("balancing_deviations"), {})
     print(f"balancing_deviations in preprocess_initial_upload {balancing_deviations}")
     weightages = parse_weightages(form.get("weightages"), {})
     max_time_in_minutes = parse_max_time_in_minutes(form.get("max_time_in_minutes"))
