@@ -84,8 +84,9 @@ const PostingBalancingDeviationSelector: React.FC<
             Balancing Deviation for Postings
           </h2>
           <p className="text-sm text-muted-foreground">
-            Optionally allow uneven distribution of residents across blocks for
-            selected postings (except GM, ED, GRM).
+            To allow uneven distribution of residents across blocks for
+            any posting (except GM, ED, GRM). If deviation is more than posting capacity, 
+            it is set to posting capacity value.
           </p>
         </div>
 

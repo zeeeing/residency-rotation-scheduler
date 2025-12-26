@@ -889,10 +889,6 @@ def allocate_timetable(
 
     # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
     for p in posting_codes:
-        print(f"HC16, posting code: {p}")
-        print(balancing_deviations)
-        print(p)
-
         # omit GM and ED from balancing constraint
         base_posting_code = p.split(" (")[0]
         if base_posting_code in ["GM", "ED", "GRM"]:
@@ -900,14 +896,16 @@ def allocate_timetable(
 
         # get the balance deviation set by the user 
         balancing_deviation = balancing_deviation = balancing_deviations.get(p, 0)
-        print(f"balancing_deviation: {balancing_deviation}")
 
         # get the max residents allowed, to ensure the balance deviation does not exceed it
         max_residents = posting_info[p]["max_residents"] 
-        print(f"max residents: {max_residents}")
 
         # ensure balancing deviation is within posting capacity
         delta = max(0, min(balancing_deviation, max_residents))
+
+        # update balancing_deviations if delta is non-zero
+        if delta > 0:
+            balancing_deviations[p] = delta
 
         # number of residents assigned per month should be balanced across the months it is active in
         # handled independently for each half of the year
@@ -1652,6 +1650,7 @@ def allocate_timetable(
             "resident_sr_preferences": resident_sr_preferences,
             "postings": postings,
             "weightages": weightages,
+            "balancing_deviations": balancing_deviation,
             "resident_leaves": resident_leaves or [],
             "solver_solution": {
                 "entries": solution_entries,
