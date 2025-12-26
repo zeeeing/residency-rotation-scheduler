@@ -884,7 +884,7 @@ def allocate_timetable(
     # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
     for p in posting_codes:
         # get the balance deviation set by the user 
-        balancing_deviation = balancing_deviation = balancing_deviations.get(p, 0)
+        balancing_deviation = balancing_deviations.get(p, 0)
 
         # get the max residents allowed, to ensure the balance deviation does not exceed it
         max_residents = posting_info[p]["max_residents"] 
