@@ -75,14 +75,14 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
 ## Local smoke test
 
 1. Start the API and client as above.
-2. In the dashboard, trigger the sample CSV generator (it downloads the CSV files) or use representative CSVs for residents, history, preferences, SR preferences, postings, and optional leaves.
+2. In the dashboard, trigger the sample CSV generator (it downloads the CSV files) or use representative CSVs for residents, history (including leave rows), preferences (including SR base column), and postings.
 3. Upload the CSVs, keep default weightages, and run the solver. Expect a successful timetable with optimisation scores populated; fix any schema errors shown in the UI or backend logs.
 4. Pin a few assignments, re-run to confirm pins hold, and download `final_timetable.csv` to verify `/api/download-csv`.
 
 ## Data model and pipeline
 
 1. **Upload/preprocess** (server/services/preprocessing.py)
-   - Accepts multipart form uploads. Required CSVs: `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`; optional `resident_leaves`. Columns must match `CSV_HEADER_SPECS` (aliases supported for camelCase flags). Parsing includes UTF-8 BOM stripping, strict header validation, duplicate checks (MCR, posting codes), integer parsing, and capacity/duration validation.
+   - Accepts multipart form uploads. Required CSVs: `residents`, `resident_history`, `resident_preferences`, `postings`. Columns must match `CSV_HEADER_SPECS` (aliases supported for camelCase flags). Parsing includes UTF-8 BOM stripping, strict header validation, duplicate checks (MCR, posting codes), integer parsing, and capacity/duration validation.
    - `weightages` (JSON string or dict), `pinned_mcrs` (JSON array), and `max_time_in_minutes` (positive int) are also read here.
 2. **Solver** (server/services/posting_allocator.py)
    - Builds OR-Tools CP-SAT variables: block-level assignment (`x[mcr][posting][block]`), selection flags, run counts, and `off_or_leave` slack.
@@ -102,7 +102,7 @@ The client expects the API at `http://localhost:8000`. Override with `API_BASE_U
 
 Can be viewed at http://127.0.0.1:8000/docs
 
-- `POST /api/solve` (multipart form): files named `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, optional `resident_leaves`; fields `weightages` (JSON), `pinned_mcrs` (JSON array of MCRs), `max_time_in_minutes` (int). Response contains `success`, `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, `resident_leaves`, `weightages`, and `statistics`.
+- `POST /api/solve` (multipart form): files named `residents`, `resident_history`, `resident_preferences`, `postings`; fields `weightages` (JSON), `pinned_mcrs` (JSON array of MCRs), `max_time_in_minutes` (int). Response contains `success`, `residents`, `resident_history`, `resident_preferences`, `resident_sr_preferences`, `postings`, `weightages`, and `statistics`.
 - `POST /api/save` (JSON): `{ resident_mcr: string, current_year: [{ month_block, posting_code }] }`. Uses cached dataset; returns the same shape as `/api/solve` on success.
 - `POST /api/download-csv` (JSON): expects `success`, `residents`, `resident_history`, `optimisation_scores`; returns a CSV blob.
 
@@ -124,11 +124,9 @@ Can be viewed at http://127.0.0.1:8000/docs
 ## Input CSV schemas (quick reference)
 
 - Residents: `mcr`, `name`, `resident_year`, `career_blocks_completed`.
-- Resident History: `mcr`, `year`, `month_block` (1–12), `career_block`, `posting_code`, `is_current_year`, `is_leave`, `leave_type`.
-- Resident Preferences: `mcr`, `preference_rank`, `posting_code`.
-- SR Preferences: `mcr`, `preference_rank`, `base_posting`.
+- Resident History: `mcr`, `year`, `month_block` (1–12), `career_block`, `posting_code`, `is_current_year`, `is_leave`, `leave_type` (use `is_leave=1` rows for leave entries).
+- Preferences: `mcr`, `preference_rank`, `posting_code`, `resident_sr_preferences` (optional per row).
 - Postings: `posting_code`, `posting_name`, `posting_type` (`core`/`elective`), `max_residents`, `required_block_duration`.
-- Resident Leaves (optional): `mcr`, `month_block`, `leave_type`, `posting_code` (reserves capacity when set).
 
 ## Data Structure of helpers in `posting_allocator.py`
 
@@ -330,7 +328,7 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
 
 #### `resident_leaves` (= `normalised_leaves`)
 
-- List of leave info, includes `derived_leave_rows` (same structure)
+- List of leave info derived from current-year `resident_history` rows with `is_leave=1` (same structure as `derived_leave_rows`).
 - **Type**: `List[Dict[str,Any]]`
 - **Shape**:
   ```
