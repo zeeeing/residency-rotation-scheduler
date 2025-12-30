@@ -67,8 +67,6 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             "posting_code": code,
             "is_leave": is_leave
         }
-        print("by_block")
-        print(by_block)
 
     if warnings:
         return {"success": False, "warnings": warnings}
@@ -197,13 +195,9 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             base = _base_of(code)
             if posting_info.get(code, {}).get("posting_type") == "core":
                 base_counts_current_year[base] = base_counts_current_year.get(base, 0) + 1
-                print("base_counts_current_year[base]")
-                print(base_counts_current_year[base])
         for base, required in CORE_REQUIREMENTS.items():
             hist_done = int(core_completed_hist.get(base, 0))
             current_year_assigned = int(base_counts_current_year.get(base, 0))
-            print("current_year_assigned")
-            print(current_year_assigned)
             if hist_done + current_year_assigned > int(required):
                 add_warning(
                     "HC5",
