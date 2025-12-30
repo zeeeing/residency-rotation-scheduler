@@ -27,18 +27,18 @@ import {
 } from "@/components/ui/item";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { InfoIcon, TrashIcon } from "lucide-react";
-import { ALL_POSTINGS } from "@/lib/constants"
 
 interface PostingBalancingDeviationSelectorProps {
   value: Record<string, number>;
   setValue: (val: Record<string, number>) => void;
+  postings: string[];
 }
 
 const MAX_THRESHOLD = 15;
 
 const PostingBalancingDeviationSelector: React.FC<
   PostingBalancingDeviationSelectorProps
-> = ({ value, setValue }) => {
+> = ({ value, setValue, postings }) => {
   const [open, setOpen] = useState(false);
   const [selectedPosting, setSelectedPosting] = useState<string | null>(null);
   const [threshold, setThreshold] = useState<number>(1);
@@ -46,8 +46,8 @@ const PostingBalancingDeviationSelector: React.FC<
   const configuredPostings = Object.keys(value);
 
   const availablePostings = useMemo(
-    () => ALL_POSTINGS.filter((p) => !(p in value)),
-    [value]
+    () => postings.filter((p) => !(p in value)),
+    [postings, value]
   );
 
   const handleAdd = (): void => {

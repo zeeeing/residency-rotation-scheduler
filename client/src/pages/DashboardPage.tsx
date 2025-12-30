@@ -1,3 +1,4 @@
+import Papa from "papaparse";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import React, { useEffect, useMemo, useState } from "react";
@@ -49,6 +50,7 @@ const HomePage: React.FC = () => {
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
   });
+  const [postingCodes, setPostingCodes] = useState<string[]>([]);
   const [postingDeviation, setPostingDeviation] = useState<Record<string, number>>({});
   const [maxTimeInMinutes, setMaxTimeInMinutes] = useState<string>("20");
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
@@ -75,13 +77,36 @@ const HomePage: React.FC = () => {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+
       if (!file.name.endsWith(".csv")) {
         setError("Please upload a CSV file.");
         return;
       }
+
       setCsvFiles((prev) => ({ ...prev, [fileType]: file }));
       setError(null);
       setApiResponse(null);
+
+      if (fileType === "postings") {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results: { data: any[]; }) => {
+            const codes = Array.from(
+              new Set(
+                results.data
+                  .map((row: any) => row.posting_code)
+                  .filter(Boolean)
+              )
+            );
+
+            setPostingCodes(codes);
+          },
+          error: () => {
+            setError("Failed to parse postings CSV.");
+          },
+        });
+      }
     };
 
   const handleProcessFiles = async () => {
@@ -231,7 +256,7 @@ const HomePage: React.FC = () => {
       {/* weightage selector */}
       <WeightageSelector value={weightages} setValue={setWeightages} />
 
-      <PostingBalancingDeviationSelector value={postingDeviation} setValue={setPostingDeviation} />
+      <PostingBalancingDeviationSelector value={postingDeviation} setValue={setPostingDeviation} postings={postingCodes} />
 
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Run Configurations</h2>
