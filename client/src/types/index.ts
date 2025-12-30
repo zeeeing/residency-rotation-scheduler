@@ -63,7 +63,6 @@ export interface ResidentSrPreference {
 
 export interface Posting {
   posting_code: string;
-  posting_name: string;
   posting_type: string;
   max_residents: number;
   required_block_duration: number;

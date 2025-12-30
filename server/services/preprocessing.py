@@ -43,7 +43,6 @@ CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
         "label": "Postings CSV",
         "required": [
             "posting_code",
-            "posting_name",
             "posting_type",
             "max_residents",
             "required_block_duration",
@@ -343,7 +342,6 @@ def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted.append(
             {
                 "posting_code": str(row.get("posting_code") or "").strip(),
-                "posting_name": str(row.get("posting_name") or "").strip(),
                 "posting_type": str(row.get("posting_type") or "").strip(),
                 "max_residents": max_residents,
                 "required_block_duration": required_block_duration,
