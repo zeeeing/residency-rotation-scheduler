@@ -431,9 +431,6 @@ def allocate_timetable(
                 model.AddAutomaton(vars, INIT, final_states, transitions)
 
     # Hard Constraint 4 (CCR): CCR postings
-    ccr_stage2_bonus_terms = []
-    ccr_stage2_bonus_weight = 5
-
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -473,22 +470,6 @@ def allocate_timetable(
             model.Add(ccr_runs <= 1)
         else:
             model.Add(ccr_runs == 0)
-
-        # bonus: complete CCR during Stage 2 (and nowhere else)
-        if (not done_ccr) and stage2_blocks:
-            ccr_stage2_blocks = sum(
-                x[mcr][p][b] for p in offered for b in stage2_blocks
-            )
-            ccr_outside_stage2 = sum(
-                x[mcr][p][b] for p in offered for b in blocks if b not in stage2_blocks
-            )
-            flag = model.NewBoolVar(f"{mcr}_ccr_stage2_bonus")
-            # flag = 1 ⇔ at least one CCR block is in Stage 2
-            model.Add(ccr_stage2_blocks >= 1).OnlyEnforceIf(flag)
-            model.Add(ccr_stage2_blocks == 0).OnlyEnforceIf(flag.Not())
-            # If flag = 1, CCR must not appear outside Stage 2
-            model.Add(ccr_outside_stage2 == 0).OnlyEnforceIf(flag)
-            ccr_stage2_bonus_terms.append(ccr_stage2_bonus_weight * flag)
 
     # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
     for resident in residents:
@@ -651,9 +632,6 @@ def allocate_timetable(
                         model.AddImplication(x[mcr][p][b], x[mcr][p][b - 1])
 
     # Hard Constraint 11: GM capped at 3 blocks in Year 1
-    gm_ktph_bonus_terms = []
-    gm_ktph_bonus_weight = 1
-
     for resident in residents:
         mcr = resident["mcr"]
         stages_by_block = career_progress[mcr].get("stages_by_block", {})
@@ -676,15 +654,6 @@ def allocate_timetable(
             # ensure GM postings are capped at 3 blocks including history
             gm_cap_remaining = max(0, 3 - hist_gm_stage1)
             model.Add(gm_blocks_count <= gm_cap_remaining)
-
-            # bonus for assigning `GM (KTPH)`
-            ktph_bonus = sum(
-                x[mcr][p][b]
-                for p in posting_codes
-                if p == "GM (KTPH)"
-                for b in stage1_blocks
-            )
-            gm_ktph_bonus_terms.append(gm_ktph_bonus_weight * ktph_bonus)
 
     # Hard Constraint 12: if ED and GRM present, enforce contiguity
     for resident in residents:
@@ -1025,6 +994,43 @@ def allocate_timetable(
             # Allow shortfall when unmet == 1
             model.Add(hist_done + assigned <= required - 1).OnlyEnforceIf(unmet_flag)
 
+    # Soft Constraint 3: CCR timing bonus
+    ccr_stage2_bonus_terms = []
+    ccr_stage2_bonus_weight = 5
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_progress = posting_progress.get(mcr, {})
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        stage2_blocks = [b for b in blocks if stages_by_block.get(b) == 2]
+
+        if not stage2_blocks:
+            continue
+
+        done_ccr = any(
+            resident_progress.get(ccr_posting, {}).get("is_completed", False)
+            for ccr_posting in CCR_POSTINGS
+        )
+        if done_ccr:
+            continue
+
+        offered = [p for p in CCR_POSTINGS if p in posting_codes]
+        if not offered:
+            continue
+
+        ccr_stage2_blocks = sum(x[mcr][p][b] for p in offered for b in stage2_blocks)
+        ccr_outside_stage2 = sum(
+            x[mcr][p][b] for p in offered for b in blocks if b not in stage2_blocks
+        )
+
+        flag = model.NewBoolVar(f"{mcr}_ccr_stage2_bonus")
+        # flag = 1 ⇔ at least one CCR block is in Stage 2
+        model.Add(ccr_stage2_blocks >= 1).OnlyEnforceIf(flag)
+        model.Add(ccr_stage2_blocks == 0).OnlyEnforceIf(flag.Not())
+        # If flag = 1, CCR must not appear outside Stage 2
+        model.Add(ccr_outside_stage2 == 0).OnlyEnforceIf(flag)
+        ccr_stage2_bonus_terms.append(ccr_stage2_bonus_weight * flag)
+
     # Soft Constraint 4: SR preference
     sr_bonus_context: Dict[str, Dict] = {}
     sr_choice_flags: Dict[str, Dict[str, cp_model.BoolVar]] = {}
@@ -1300,35 +1306,6 @@ def allocate_timetable(
                     stage_value * x[mcr][p][b] * seniority_bonus_weight
                 )
 
-    # elective shortfall penalty
-    s3_elective_shortfall_penalty_terms = []
-    elective_shortfall_penalty_weight = (
-        weightages.get("elective_shortfall_penalty") or 0
-    )
-
-    s2_elective_shortfall_penalty_terms = []
-    for mcr, flag in stage2_elective_shortfall_flags.items():
-        s2_elective_shortfall_penalty_terms.append(
-            elective_shortfall_penalty_weight * flag
-        )
-
-    for mcr in elective_shortfall_penalty_flags:
-        s3_elective_shortfall_penalty_terms.append(
-            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
-        )
-
-    # core shortfall penalty
-    core_shortfall_penalty_terms = []
-    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty") or 0
-
-    for mcr, base_map in core_shortfall.items():
-        for base, slack in base_map.items():
-            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
-
-    micu_rccm_pack_penalty_terms = [
-        core_shortfall_penalty_weight * flag for flag in micu_rccm_pack_shortfall_flags
-    ]
-
     # core prioritisation bonus
     core_bonus_terms = []
     core_bonus_weight = 5
@@ -1470,6 +1447,54 @@ def allocate_timetable(
 
         ed_grm_gm_bundle_bonus_terms.append(ed_grm_gm_bundle_bonus_weight * flag)
 
+    # GM (KTPH) bonus
+    gm_ktph_bonus_terms = []
+    gm_ktph_bonus_weight = 1
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
+        if not stage1_blocks:
+            continue
+
+        ktph_bonus = sum(
+            x[mcr][p][b]
+            for p in posting_codes
+            if p == "GM (KTPH)"
+            for b in stage1_blocks
+        )
+        gm_ktph_bonus_terms.append(gm_ktph_bonus_weight * ktph_bonus)
+
+    # elective shortfall penalty
+    s3_elective_shortfall_penalty_terms = []
+    elective_shortfall_penalty_weight = (
+        weightages.get("elective_shortfall_penalty") or 0
+    )
+
+    s2_elective_shortfall_penalty_terms = []
+    for mcr, flag in stage2_elective_shortfall_flags.items():
+        s2_elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * flag
+        )
+
+    for mcr in elective_shortfall_penalty_flags:
+        s3_elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
+        )
+
+    # core shortfall penalty
+    core_shortfall_penalty_terms = []
+    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty") or 0
+
+    for mcr, base_map in core_shortfall.items():
+        for base, slack in base_map.items():
+            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+
+    micu_rccm_pack_penalty_terms = [
+        core_shortfall_penalty_weight * flag for flag in micu_rccm_pack_shortfall_flags
+    ]
+
     # discourage empty blocks (OFF) unless on leave
     off_penalty_terms = []
     off_penalty_weight = 99
@@ -1482,22 +1507,22 @@ def allocate_timetable(
 
     # Objective
     model.Maximize(
-        sum(gm_ktph_bonus_terms)  # static, 1
-        + sum(ccr_stage2_bonus_terms)  # static, 5
+        sum(ccr_stage2_bonus_terms)  # static, 5
         + sum(s2_elective_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
-        + sum(sr_preference_bonus_terms)
-        + sum(sr_19_24_bonus_terms)
+        + sum(sr_preference_bonus_terms) # preference-weighted
+        + sum(sr_19_24_bonus_terms) # preference-weighted
         + sum(sr_choice_bonus_terms)  # static, 10
         + sum(seniority_bonus_terms)
-        - sum(s2_elective_shortfall_penalty_terms)
-        - sum(s3_elective_shortfall_penalty_terms)
-        - sum(core_shortfall_penalty_terms)
-        - sum(micu_rccm_pack_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
         + sum(ed_grm_pair_bonus_terms)  # static, 5
         + sum(three_gm_bonus_terms)  # static, 5
         + sum(ed_grm_gm_bundle_bonus_terms)  # static, 10
+        + sum(gm_ktph_bonus_terms)  # static, 1
+        - sum(s2_elective_shortfall_penalty_terms)
+        - sum(s3_elective_shortfall_penalty_terms)
+        - sum(core_shortfall_penalty_terms)
+        - sum(micu_rccm_pack_penalty_terms) # core penalty weight
         - sum(off_penalty_terms)  # static, extreme penalty 99
     )
 

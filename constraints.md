@@ -180,7 +180,7 @@ Refer to `# DEFINE HARD CONSTRAINTS` section of the code in [`server/services/po
 
 - For every posting except GM/ED/GRM, resident counts per block are equal within blocks 1–6 and within blocks 7–12 (leave-reserved slots are treated as occupied).
 
-## Soft Constraints and Objective Terms
+## Soft Constraints
 
 Refer to `# DEFINE SOFT CONSTRAINTS WITH PENALTIES` section of the code in [`server/services/posting_allocator.py`](./server/services/posting_allocator.py).
 
@@ -218,7 +218,7 @@ Refer to `# DEFINE SOFT CONSTRAINTS WITH PENALTIES` section of the code in [`ser
 - Seniority bonus: per-block bonus scaled by stage value and the `seniority` weight.
 - Core prioritisation bonus: fixed bonus for selecting any core posting.
 - ED/GRM/GM bonuses: pair bonus for ED+GRM, three-GM bonus when exactly three GM blocks exist with ED+GRM, and a half-year bundle bonus when ED/GRM/GM stay within one half-year.
-- GM@KTPH bonus: bonus for `GM (KTPH)` blocks in stage 1 (related to HC11).
+- GM (KTPH) bonus: bonus for `GM (KTPH)` blocks in stage 1 (related to HC11).
 - MICU/RCCM pack shortfall penalty: uses the `core_shortfall_penalty` weight when pack #1 is not completed during stage 2 and stage 2 does not finish in the current AY.
 - OFF penalty: strong penalty (`OFF` not on leave) to discourage unused blocks.
 
