@@ -106,9 +106,7 @@ export interface CsvFilesState {
   residents: File | null;
   resident_history: File | null;
   resident_preferences: File | null;
-  resident_sr_preferences: File | null;
   postings: File | null;
-  resident_leaves?: File | null;
 }
 
 // generation of sample csv
