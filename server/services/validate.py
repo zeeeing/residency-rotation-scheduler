@@ -41,7 +41,7 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     posting_info: Dict[str, Dict] = {p.get("posting_code"): p for p in postings}
 
-    by_block: Dict[int, str] = {}
+    by_block: Dict[int, Dict[str, bool]] = {}
     seen_blocks = set()
     for r in current_year:
         try:
@@ -49,23 +49,35 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             b = 0
         code = r.get("posting_code")
+        is_leave = r.get("is_leave")
         if b < 1 or b > 12:
             add_warning("INPUT", f"invalid month_block {b}")
             continue
         if not code:
             add_warning("INPUT", f"missing posting_code for month_block {b}")
             continue
+        if is_leave is None:
+            add_warning("INPUT", f"missing is_leave for month_block {b}")
+            continue
         if b in seen_blocks:
             add_warning("INPUT", f"duplicate month_block {b}")
             continue
         seen_blocks.add(b)
-        by_block[b] = code
+        by_block[b] = {
+            "posting_code": code,
+            "is_leave": is_leave
+        }
+        print("by_block")
+        print(by_block)
 
     if warnings:
         return {"success": False, "warnings": warnings}
 
     def occurrences(code: str) -> List[int]:
-        return sorted([b for b, c in by_block.items() if c == code])
+        return sorted(
+            b 
+            for b, info in by_block.items() 
+            if info.get("posting_code") == code)
 
     def idxToMonth(idx: int) -> str:
         if 1 <= idx <= 12:
@@ -74,7 +86,7 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     quarter_starts = {1, 4, 7, 10}
     # HC3/HC8/HC9/HC10: duration, boundary, start-month, and GRM odd-block checks
-    for code in set(by_block.values()):
+    for code in set(info["posting_code"] for info in by_block.values()):
         dur = int(posting_info.get(code, {}).get("required_block_duration", 1))
         occ = occurrences(code)
         if not occ:
@@ -119,8 +131,9 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
     ed_grm_blocks = sorted(
         [
             b
-            for b, c in by_block.items()
-            if str(c).startswith("ED") or str(c).startswith("GRM (")
+            for b, info in by_block.items()
+            if str(info["posting_code"]).startswith("ED") 
+            or str(info["posting_code"]).startswith("GRM (")
         ]
     )
     if ed_grm_blocks:
@@ -133,10 +146,10 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     # HC7a/HC7b/HC8: MICU + RCCM contiguous, same institution, stay within half-year boundary
     micu_blocks = sorted(
-        [b for b, c in by_block.items() if str(c).startswith("MICU (")]
+        [b for b, info in by_block.items() if str(info["posting_code"]).startswith("MICU (")]
     )
     rccm_blocks = sorted(
-        [b for b, c in by_block.items() if str(c).startswith("RCCM (")]
+        [b for b, info in by_block.items() if str(info["posting_code"]).startswith("RCCM (")]
     )
     comb_blocks = sorted(micu_blocks + rccm_blocks)
     if comb_blocks:
@@ -150,10 +163,10 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
                 break
         if micu_blocks and rccm_blocks:
             micu_insts = {
-                _inst_of(c) for b, c in by_block.items() if str(c).startswith("MICU (")
+                _inst_of(info["posting_code"]) for b, info in by_block.items() if str(info["posting_code"]).startswith("MICU (")
             }
             rccm_insts = {
-                _inst_of(c) for b, c in by_block.items() if str(c).startswith("RCCM (")
+                _inst_of(info["posting_code"]) for b, info in by_block.items() if str(info["posting_code"]).startswith("RCCM (")
             }
             if not micu_insts or not rccm_insts or len(micu_insts | rccm_insts) != 1:
                 add_warning(
@@ -176,25 +189,33 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
         past_prog = get_posting_progress(past_only, posting_info).get(mcr, {})
 
         core_completed_hist = get_core_blocks_completed(past_prog, posting_info)
-        base_counts_cy: Dict[str, int] = {}
-        for _, code in by_block.items():
+        base_counts_current_year: Dict[str, int] = {}
+        for _, info in by_block.items():
+            if info["is_leave"]: # exclude leave postings in block count 
+                continue
+            code = info["posting_code"]
             base = _base_of(code)
             if posting_info.get(code, {}).get("posting_type") == "core":
-                base_counts_cy[base] = base_counts_cy.get(base, 0) + 1
+                base_counts_current_year[base] = base_counts_current_year.get(base, 0) + 1
+                print("base_counts_current_year[base]")
+                print(base_counts_current_year[base])
         for base, required in CORE_REQUIREMENTS.items():
             hist_done = int(core_completed_hist.get(base, 0))
-            cy = int(base_counts_cy.get(base, 0))
-            if hist_done + cy > int(required):
+            current_year_assigned = int(base_counts_current_year.get(base, 0))
+            print("current_year_assigned")
+            print(current_year_assigned)
+            if hist_done + current_year_assigned > int(required):
                 add_warning(
                     "HC5",
-                    f"{base}: exceeds total month requirement (completed: {hist_done} + assigned: {cy} > required: {required})",
+                    f"{base}: exceeds total month requirement (completed: {hist_done} + assigned: {current_year_assigned} > required: {required})",
                 )
 
         # HC6: electives cannot repeat by base posting
         completed_elective_bases = {
             _base_of(p) for p in get_unique_electives_completed(past_prog, posting_info)
         }
-        for _, code in by_block.items():
+        for _, info in by_block.items():
+            code = info["posting_code"]
             if posting_info.get(code, {}).get("posting_type") == "elective":
                 base = _base_of(code)
                 if base in completed_elective_bases:
@@ -206,7 +227,7 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
         # HC4: CCR permitted exactly once (unless already completed or Y1)
         done_ccr = bool(get_ccr_postings_completed(past_prog, posting_info))
         offered = [p for p in CCR_POSTINGS if p in posting_info]
-        ccr_blocks = sorted([b for b, c in by_block.items() if c in offered])
+        ccr_blocks = sorted([b for b, info in by_block.items() if info["posting_code"] in offered])
         runs = 0
         i = 0
         while i < len(ccr_blocks):
@@ -233,7 +254,7 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         # HC11: Y1 residents limited to 3 GM blocks
         if resident_year == 1:
-            gm_cy = sum(1 for _, c in by_block.items() if _base_of(c) == "GM")
+            gm_cy = sum(1 for _, info in by_block.items() if _base_of(info["posting_code"]) == "GM")
             if gm_cy > 3:
                 add_warning(
                     "HC11", "GM postings are capped at 3 months in Residency Year 1"
@@ -244,12 +265,12 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
         # HC2: enforce per-posting capacity by block
         cur = [h for h in resident_history if h.get("is_current_year")]
         cur = [h for h in cur if h.get("mcr") != mcr]
-        for b, code in by_block.items():
+        for b, info in by_block.items():
             cur.append(
                 {
                     "mcr": mcr,
                     "month_block": int(b),
-                    "posting_code": code,
+                    "posting_code": info["posting_code"],
                     "is_current_year": True,
                 }
             )
