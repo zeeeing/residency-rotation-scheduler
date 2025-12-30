@@ -35,9 +35,7 @@ const HomePage: React.FC = () => {
     residents: null,
     resident_history: null,
     resident_preferences: null,
-    resident_sr_preferences: null,
     postings: null,
-    resident_leaves: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,9 +92,7 @@ const HomePage: React.FC = () => {
     if (csvFiles.residents) formData.append("residents", csvFiles.residents);
     if (csvFiles.resident_history) formData.append("resident_history", csvFiles.resident_history);
     if (csvFiles.resident_preferences) formData.append("resident_preferences", csvFiles.resident_preferences);
-    if (csvFiles.resident_sr_preferences) formData.append("resident_sr_preferences", csvFiles.resident_sr_preferences);
     if (csvFiles.postings) formData.append("postings", csvFiles.postings);
-    if (csvFiles.resident_leaves) formData.append("resident_leaves", csvFiles.resident_leaves);
     // include weightages and pinned residents
     formData.append("weightages", JSON.stringify(weightages));
     formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
@@ -210,7 +206,7 @@ const HomePage: React.FC = () => {
       </h1>
 
       {/* Upload Section */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         <FileUpload
           label="Residents CSV"
           onChange={handleFileUpload("residents")}
@@ -224,16 +220,8 @@ const HomePage: React.FC = () => {
           onChange={handleFileUpload("resident_preferences")}
         />
         <FileUpload
-          label="SR Preferences CSV"
-          onChange={handleFileUpload("resident_sr_preferences")}
-        />
-        <FileUpload
           label="Postings CSV"
           onChange={handleFileUpload("postings")}
-        />
-        <FileUpload
-          label="Leave CSV"
-          onChange={handleFileUpload("resident_leaves")}
         />
       </div>
 
@@ -296,7 +284,6 @@ const HomePage: React.FC = () => {
             (!apiResponse &&
               (!csvFiles.residents ||
                 !csvFiles.resident_preferences ||
-                !csvFiles.resident_sr_preferences ||
                 !csvFiles.resident_history ||
                 !csvFiles.postings))
           }
@@ -317,8 +304,9 @@ const HomePage: React.FC = () => {
           variant="secondary"
           onClick={generateSampleCSV}
           className="cursor-pointer"
+          disabled
         >
-          Download Sample CSV
+          Download Sample CSV (Coming Soon)
         </Button>
       </div>
 
