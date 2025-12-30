@@ -36,15 +36,13 @@ export const saveSchedule = async (
 
 export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
   try {
-    const { success, residents, resident_history, statistics } =
+    const { success, residents, resident_history } =
       apiResponse ?? {};
-    const optimisation_scores = statistics?.cohort?.optimisation_scores ?? [];
 
     const payload = {
       success,
       residents,
       resident_history,
-      optimisation_scores,
     };
 
     const { data } = await api.post("/download-csv", payload, {
