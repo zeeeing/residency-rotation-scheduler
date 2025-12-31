@@ -52,6 +52,38 @@ CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
 }
 
 
+SR_PREFERENCE_ALIASES: Dict[str, str] = {
+    # aliases mapped to canonical base names.
+    "Cardio": "CVM",
+    "Endocrine": "Endocrine",
+    "Gastro": "Gastro",
+    "AIM": "GM",
+    "GRM": "GRM",
+    "Haemato": "Haemato",
+    "ID": "ID",
+    "Med Onco": "Med Onco",
+    "Pall Med": "PMD",
+    "RAI": "RAI",
+    "Respi": "RCCM",
+    "Respi": "MICU",
+    "Rehab": "Rehab",
+    "Renal": "Renal",
+    "Neuro": "NL",
+    "Derm": "Derm",
+    "Unsure": "",
+    "Gap Year": "",
+}
+
+
+def _normalise_sr_preference(value: Any) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    base = cleaned.split(" (")[0].strip()
+    canonical = SR_PREFERENCE_ALIASES.get(base.lower())
+    return canonical or base
+
+
 def _sanitise_header(value: Any) -> str:
     try:
         text = str(value or "")
@@ -338,7 +370,7 @@ def _format_sr_preferences_from_preferences(
 ) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
-        base_posting = str(row.get("resident_sr_preferences") or "").strip()
+        base_posting = _normalise_sr_preference(row.get("resident_sr_preferences"))
         if not base_posting:
             continue
         formatted.append(

@@ -12,16 +12,14 @@ def compute_postprocess(payload: Dict) -> Dict:
     ########################################################################
     # INPUT NORMALISATION
     ########################################################################
-
     residents_input: List[Dict] = payload.get("residents", [])
     resident_history_input: List[Dict] = payload.get("resident_history", [])
     resident_preferences: List[Dict] = payload.get("resident_preferences", [])
     resident_sr_preferences: List[Dict] = payload.get("resident_sr_preferences", [])
     postings: List[Dict] = payload.get("postings", [])
     weightages: Dict = dict(payload.get("weightages", {}) or {})
-
+    balancing_deviations: Dict = dict(payload.get("balancing_deviations", {}) or {})
     solver_solution: Dict = dict(payload.get("solver_solution", {}) or {})
-
     # clone resident and history entries for mutation
     residents: List[Dict] = [dict(item) for item in residents_input]
     output_history: List[Dict] = [dict(item) for item in resident_history_input]
