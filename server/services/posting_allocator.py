@@ -12,6 +12,7 @@ from server.utils import (
     variants_for_base_ci,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
+    BALANCING_GROUPS
 )
 
 
@@ -882,19 +883,33 @@ def allocate_timetable(
             model.Add(rccm_blocks == rccm_needed)
 
     # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
-    for p in posting_codes:
+    balancing_keys = set(posting_codes)
+
+    # remove postings that belong to a group
+    for members in BALANCING_GROUPS.values():
+        balancing_keys -= set(members)
+
+    # add group keys
+    balancing_keys |= set(BALANCING_GROUPS.keys())
+
+    for key in balancing_keys:
+        if key in BALANCING_GROUPS:
+            postings_in_group = BALANCING_GROUPS[key]
+        else:
+            postings_in_group = [key]
+
         # get the balance deviation set by the user 
-        balancing_deviation = balancing_deviations.get(p, 0)
+        balancing_deviation = balancing_deviations.get(key, 0)
 
         # get the max residents allowed, to ensure the balance deviation does not exceed it
-        max_residents = posting_info[p]["max_residents"] 
+        max_residents = sum(posting_info[p]["max_residents"] for p in postings_in_group) 
 
         # ensure balancing deviation is within posting capacity
         delta = max(0, min(balancing_deviation, max_residents))
 
         # update balancing_deviations if delta is non-zero
         if delta > 0:
-            balancing_deviations[p] = delta
+            balancing_deviations[key] = delta
 
         # number of residents assigned per month should be balanced across the months it is active in
         # handled independently for each half of the year
@@ -905,30 +920,30 @@ def allocate_timetable(
             num_assigned = model.NewIntVar(
                 0, len(residents), f"num_assigned_{to_snake_case(p)}_{b}"
             )
-            assigned = sum(x[r["mcr"]][p][b] for r in residents)
-            reserved = leave_quota_usage.get(p, {}).get(b, 0)
+            assigned = sum(
+                x[r["mcr"]][p][b] 
+                for r in residents
+                for p in postings_in_group
+            )
+            reserved = sum(
+                leave_quota_usage.get(p, {}).get(b, 0)
+                for p in postings_in_group
+            )
 
             # count leave-reserved slots as occupied so balancing sees the reduced headcount
             model.Add(num_assigned == assigned + reserved)
             assignments_per_block[b] = num_assigned
 
-        # First half of the year (blocks 1-6)
-        first_half_assignments = [assignments_per_block[b] for b in early_blocks]
-        if first_half_assignments:
-            min_h1 = model.NewIntVar(0, len(residents), f"min_h1_{to_snake_case(p)}")
-            max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
-            model.AddMinEquality(min_h1, first_half_assignments)
-            model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 - min_h1 <= delta)
-
-        # Second half of the year (blocks 7-12)
-        second_half_assignments = [assignments_per_block[b] for b in late_blocks]
-        if second_half_assignments:
-            min_h2 = model.NewIntVar(0, len(residents), f"min_h2_{to_snake_case(p)}")
-            max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
-            model.AddMinEquality(min_h2, second_half_assignments)
-            model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 - min_h2 <= delta)
+        for half_name, half_block in {
+            "h1": early_blocks, # First half of the year (blocks 1-6)
+            "h2": late_blocks   # Second half of the year (blocks 7-12)
+        }.items():
+            assignments = [assignments_per_block[b] for b in half_block]
+            min_in_half = model.NewIntVar(0, len(residents), f"min_{half_name}_{to_snake_case(key)}")
+            max_in_half = model.NewIntVar(0, len(residents), f"max_{half_name}_{to_snake_case(key)}")
+            model.AddMinEquality(min_in_half, assignments)
+            model.AddMaxEquality(max_in_half, assignments)
+            model.Add(max_in_half - min_in_half <= delta)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES

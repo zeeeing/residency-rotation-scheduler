@@ -47,10 +47,33 @@ const PostingBalancingDeviationSelector: React.FC<
 
   const configuredPostings = Object.keys(value);
 
-  const availablePostings = useMemo(
-    () => postings.filter((p) => !(p in value)),
-    [postings, value]
-  );
+  const availablePostings = useMemo(() => {
+    const excluded = new Set(["GRM (TTSH)", "MedComm (TTSH)"]);
+
+    const hasSharedGRM =
+      "GRM+MedComm (TTSH)" in value ||
+      "GRM (TTSH)" in value ||
+      "MedComm (TTSH)" in value;
+
+    const normalPostings = postings.filter((p) => {
+      // hide already-configured postings
+      if (p in value) return false;
+
+      // hide individual GRM/MedComm if shared is already configured
+      if (excluded.has(p) && hasSharedGRM) return false;
+
+      return true;
+    });
+
+    const result = [...normalPostings];
+
+    // only show shared option if neither individual nor shared is configured
+    if (!hasSharedGRM) {
+      result.push("GRM+MedComm (TTSH)");
+    }
+
+    return result.sort();
+  }, [postings, value]);
 
   const handleAdd = (): void => {
     if (!selectedPosting) return;
@@ -63,6 +86,14 @@ const PostingBalancingDeviationSelector: React.FC<
     const next = { ...value };
 
     postings.forEach((posting) => {
+      // GRM and MedComm have a shared key
+      if (posting === "GRM (TTSH)" || posting === "MedComm (TTSH)") {
+        if (!("GRM+MedComm (TTSH)" in next)) {
+          next["GRM+MedComm (TTSH)"] = DEFAULT_DEVIATION;
+        }
+        return;
+      }
+
       const matchesPrefix = DEFAULT_PREFIXES.some((prefix) =>
         posting.startsWith(prefix)
       );
@@ -186,7 +217,7 @@ const PostingBalancingDeviationSelector: React.FC<
                 Adds deviation = 4 for postings starting with ED, GRM, or GM
               </TooltipContent>
             </Tooltip>
-            
+
             {/* configured list */}
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 mt-4 pr-1">
               {configuredPostings.length === 0 && (
