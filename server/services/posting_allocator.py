@@ -22,6 +22,7 @@ def allocate_timetable(
     resident_sr_preferences: List[Dict],
     postings: List[Dict],
     weightages: Dict,
+    balancing_deviations: Dict,  # {"Rehab (TTSH)":1,"RAI (TTSH)":1}
     resident_leaves: Optional[List[Dict]] = None,
     pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
     max_time_in_minutes: Optional[int] = None,
@@ -882,10 +883,18 @@ def allocate_timetable(
 
     # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
     for p in posting_codes:
-        # omit GM and ED from balancing constraint
-        base_posting_code = p.split(" (")[0]
-        if base_posting_code in ["GM", "ED", "GRM"]:
-            continue
+        # get the balance deviation set by the user 
+        balancing_deviation = balancing_deviations.get(p, 0)
+
+        # get the max residents allowed, to ensure the balance deviation does not exceed it
+        max_residents = posting_info[p]["max_residents"] 
+
+        # ensure balancing deviation is within posting capacity
+        delta = max(0, min(balancing_deviation, max_residents))
+
+        # update balancing_deviations if delta is non-zero
+        if delta > 0:
+            balancing_deviations[p] = delta
 
         # number of residents assigned per month should be balanced across the months it is active in
         # handled independently for each half of the year
@@ -910,7 +919,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 == min_h1 + 0)
+            model.Add(max_h1 - min_h1 <= delta)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -919,7 +928,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 == min_h2 + 0)
+            model.Add(max_h2 - min_h2 <= delta)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
@@ -1609,6 +1618,7 @@ def allocate_timetable(
             "resident_sr_preferences": resident_sr_preferences,
             "postings": postings,
             "weightages": weightages,
+            "balancing_deviations": balancing_deviation,
             "resident_leaves": resident_leaves or [],
             "solver_solution": {
                 "entries": solution_entries,
