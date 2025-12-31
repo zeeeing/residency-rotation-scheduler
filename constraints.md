@@ -179,7 +179,6 @@ Refer to `# DEFINE HARD CONSTRAINTS` section of the code in [`server/services/po
 #### HC16 — Balancing within halves and balancing deviation per posting 
 - Within blocks 1-6 and within blocks 7-12, the user can optionally input how much imbalance is allowed between the maximum and minimum number of residents assigned across 6 blocks. 
   - 0 <= (max - min) <= deviation
-  - Set GM, ED, GRM to a high value (eg 4) to ensure a solution.
   - GRM (TTSH) and MedComm (TTSH) share the same balancing deviation and quota.
     - GRM (TTSH) and MedComm (TTSH) are treated as a single balancing group.
     - Balancing is enforced on the sum of individual assignments across the group.
