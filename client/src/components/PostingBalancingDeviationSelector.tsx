@@ -12,13 +12,6 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "./ui/select";
-import {
   Item,
   ItemActions,
   ItemContent,
@@ -27,6 +20,7 @@ import {
 } from "@/components/ui/item";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { InfoIcon, TrashIcon } from "lucide-react";
+import { Check } from "lucide-react";
 
 interface PostingBalancingDeviationSelectorProps {
   value: Record<string, number>;
@@ -35,75 +29,60 @@ interface PostingBalancingDeviationSelectorProps {
 }
 
 const MAX_THRESHOLD = 15;
-const DEFAULT_PREFIXES = ["ED", "GRM", "GM"];
-const DEFAULT_DEVIATION = 4;
 
 const PostingBalancingDeviationSelector: React.FC<
   PostingBalancingDeviationSelectorProps
 > = ({ value, setValue, postings }) => {
   const [open, setOpen] = useState(false);
-  const [selectedPosting, setSelectedPosting] = useState<string | null>(null);
+  const [selectedPostings, setSelectedPostings] = useState<string[]>([]);
   const [threshold, setThreshold] = useState<number>(1);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const configuredPostings = Object.keys(value);
 
   const availablePostings = useMemo(() => {
-    const excluded = new Set(["GRM (TTSH)", "MedComm (TTSH)"]);
+    const hasShared =
+      "GRM+MedComm (TTSH)" in value;
 
-    const hasSharedGRM =
-      "GRM+MedComm (TTSH)" in value ||
-      "GRM (TTSH)" in value ||
-      "MedComm (TTSH)" in value;
+    const hasIndividualGRM =
+      "GRM (TTSH)" in value || "MedComm (TTSH)" in value;
 
-    const normalPostings = postings.filter((p) => {
-      // hide already-configured postings
-      if (p in value) return false;
+    return postings
+      .filter((p) => {
+        if (p in value) return false;
 
-      // hide individual GRM/MedComm if shared is already configured
-      if (excluded.has(p) && hasSharedGRM) return false;
+        // hide individual GRM/MedComm if shared exists
+        if (hasShared && (p === "GRM (TTSH)" || p === "MedComm (TTSH)"))
+          return false;
 
-      return true;
-    });
-
-    const result = [...normalPostings];
-
-    // only show shared option if neither individual nor shared is configured
-    if (!hasSharedGRM) {
-      result.push("GRM+MedComm (TTSH)");
-    }
-
-    return result.sort();
+        return true;
+      })
+      .concat(
+        hasShared || hasIndividualGRM
+          ? []
+          : ["GRM+MedComm (TTSH)"]
+      )
+      .sort();
   }, [postings, value]);
 
   const handleAdd = (): void => {
-    if (!selectedPosting) return;
-    setValue({ ...value, [selectedPosting]: threshold });
-    setSelectedPosting(null);
-    setThreshold(1);
-  };
+    if (selectedPostings.length === 0) return;
 
-  const handleAddDefaultDeviations = (): void => {
     const next = { ...value };
 
-    postings.forEach((posting) => {
-      // GRM and MedComm have a shared key
+    selectedPostings.forEach((posting) => {
       if (posting === "GRM (TTSH)" || posting === "MedComm (TTSH)") {
-        if (!("GRM+MedComm (TTSH)" in next)) {
-          next["GRM+MedComm (TTSH)"] = DEFAULT_DEVIATION;
-        }
+        next["GRM+MedComm (TTSH)"] = threshold;
         return;
       }
 
-      const matchesPrefix = DEFAULT_PREFIXES.some((prefix) =>
-        posting.startsWith(prefix)
-      );
-
-      if (matchesPrefix && !(posting in next)) {
-        next[posting] = DEFAULT_DEVIATION;
-      }
+      next[posting] = threshold;
     });
 
     setValue(next);
+    setSelectedPostings([]);
+    setThreshold(1);
+    setShowDropdown(false);
   };
 
   const handleUpdate =
@@ -133,14 +112,23 @@ const PostingBalancingDeviationSelector: React.FC<
             Balancing Deviation for Postings
           </h2>
           <p className="text-sm text-muted-foreground">
-            To allow uneven distribution of residents across blocks for
-            any posting. If deviation is more than posting capacity, 
-            it is set to posting capacity value.
+            Allows uneven distribution of residents across blocks for each
+            posting. If deviation exceeds posting capacity, it is capped at
+            capacity.
           </p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
+          <Dialog
+            open={open}
+            onOpenChange={(v) => {
+              setOpen(v);
+              if (!v) {
+                setShowDropdown(false);
+                setSelectedPostings([]);
+              }
+            }}
+          >
+            <DialogTrigger asChild>
             <Button variant="outline" size="sm">
               Configure
             </Button>
@@ -150,39 +138,68 @@ const PostingBalancingDeviationSelector: React.FC<
             <DialogHeader>
               <DialogTitle>Configure posting deviations</DialogTitle>
               <DialogDescription>
-                Set how much imbalance (less than or equal to posting capacity) is allowed between the maximum and
-                minimum number of residents assigned across 6 blocks.
+                Select one or more postings and apply the same allowed imbalance
+                across all 6 blocks.
               </DialogDescription>
             </DialogHeader>
 
-            {/* add new deviation */}
-            <div className="flex gap-2 items-end">
+            {/* add new deviations */}
+            <div className="flex items-end gap-2">
+              {/* Posting selector */}
               <div className="flex-1">
-                <Label>Posting</Label>
-                <Select
-                  value={selectedPosting ?? ""}
-                  onValueChange={setSelectedPosting}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select posting" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availablePostings.map((posting) => (
-                      <SelectItem key={posting} value={posting}>
-                        {posting}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Postings</Label>
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between"
+                    onClick={() => setShowDropdown((v) => !v)}
+                  >
+                    {selectedPostings.length === 0
+                      ? "Select postings"
+                      : `${selectedPostings.length} selected`}
+                  </Button>
+
+                  {showDropdown && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow">
+                      <div className="max-h-60 overflow-y-auto p-1">
+                        {availablePostings.map((posting) => {
+                          const checked = selectedPostings.includes(posting);
+
+                          return (
+                            <button
+                              key={posting}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+                              onClick={() => {
+                                setSelectedPostings((prev) =>
+                                  checked
+                                    ? prev.filter((p) => p !== posting)
+                                    : [...prev, posting]
+                                );
+                              }}
+                            >
+                              <Check
+                                className={`h-4 w-4 ${
+                                  checked ? "opacity-100" : "opacity-0"
+                                }`}
+                              />
+                              {posting}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
+              {/* Threshold */}
               <div className="w-24">
                 <Label>Threshold</Label>
                 <Input
                   type="number"
                   min={1}
                   max={MAX_THRESHOLD}
-                  step={1}
                   value={threshold}
                   onChange={(e) =>
                     setThreshold(
@@ -195,28 +212,15 @@ const PostingBalancingDeviationSelector: React.FC<
                 />
               </div>
 
+              {/* Add button */}
               <Button
+                className="mb-[2px]"
                 onClick={handleAdd}
-                disabled={!selectedPosting}
+                disabled={selectedPostings.length === 0}
               >
                 Add
               </Button>
             </div>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddDefaultDeviations}
-                >
-                  Add defaults for ED / GRM / GM
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Adds deviation = 4 for postings starting with ED, GRM, or GM
-              </TooltipContent>
-            </Tooltip>
 
             {/* configured list */}
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 mt-4 pr-1">
@@ -236,13 +240,15 @@ const PostingBalancingDeviationSelector: React.FC<
                           <InfoIcon size={14} />
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                          Max − min residents assigned across 6 blocks
+                          Max − min residents across 6 blocks
                         </TooltipContent>
                       </Tooltip>
                     </ItemTitle>
+
                     <ItemDescription className="text-xs">
                       Allowed deviation
                     </ItemDescription>
+
                     <Input
                       type="number"
                       min={0}
@@ -270,10 +276,10 @@ const PostingBalancingDeviationSelector: React.FC<
       </div>
 
       {/* summary */}
-      <div className="text-sm text-muted-foreground"> 
-        <span className="font-semibold">Current configuration </span>
+      <div className="text-sm text-muted-foreground">
+        <span className="font-semibold">Current configuration: </span>
         {configuredPostings.length === 0
-          ? " All postings use default balancing (no deviation)."
+          ? "All postings use default balancing (no deviation)."
           : configuredPostings
               .map((p) => `${p}: ${value[p]}`)
               .join(", ")}
