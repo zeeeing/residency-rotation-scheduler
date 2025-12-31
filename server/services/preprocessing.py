@@ -585,53 +585,61 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
     }
 
 
-async def prepare_solver_input(
-    form: FormData,
-    latest_inputs: Optional[Dict[str, Any]],
-    latest_api_response: Optional[Dict[str, Any]],
-) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+async def prepare_solver_input(form: FormData) -> Dict[str, Any]:
     """
     Build the solver input payload based on uploaded files and/or pinned selections.
-    Returns the payload plus an optional deep copy to refresh the cached latest_inputs.
+    Stateless: client provides previous context via 'previous_response' field if needed for pinned runs.
     """
-    print("in prepare_solver_input")
     pinned_mcrs = parse_pinned_list(form.get("pinned_mcrs"))
     has_pinned = bool(pinned_mcrs)
-    has_cached_run = bool(latest_api_response)
+    
+    # Get previous response from client (for pinned runs)
+    previous_response_raw = form.get("previous_response")
+    previous_response: Optional[Dict[str, Any]] = None
+    if previous_response_raw:
+        try:
+            if isinstance(previous_response_raw, str):
+                previous_response = json.loads(previous_response_raw)
+            elif hasattr(previous_response_raw, 'read'):
+                content = await previous_response_raw.read()
+                previous_response = json.loads(content.decode('utf-8'))
+        except (json.JSONDecodeError, Exception):
+            previous_response = None
 
-    if has_pinned and has_cached_run:
+    has_previous = bool(previous_response and previous_response.get("residents"))
+
+    if has_pinned and has_previous:
         solver_input = build_pinned_run_input(
-            latest_inputs=latest_inputs,
-            latest_api_response=latest_api_response,
+            previous_response=previous_response,
             pinned_mcrs=pinned_mcrs,
             weightages_override=form.get("weightages"),
             balancing_deviations=form.get("balancing_deviations"),
             max_time_in_minutes=form.get("max_time_in_minutes"),
         )
-        latest_inputs_snapshot: Optional[Dict[str, Any]] = None
     else:
         solver_input = await preprocess_initial_upload(form)
-        latest_inputs_snapshot = copy.deepcopy(solver_input)
 
-    return solver_input, latest_inputs_snapshot
+    return solver_input
 
 
 def build_pinned_run_input(
-    latest_inputs: Optional[Dict[str, Any]],
-    latest_api_response: Optional[Dict[str, Any]],
+    previous_response: Optional[Dict[str, Any]],
     pinned_mcrs: List[str],
     weightages_override: Any = None,
     balancing_deviations: Any = None,
     max_time_in_minutes: Any = None,
 ) -> Dict[str, Any]:
-    if not latest_api_response:
+    """
+    Build solver input for a pinned run using client-provided previous response.
+    """
+    if not previous_response:
         raise HTTPException(
             status_code=400,
             detail="No existing timetable found. Upload CSV files before pinning residents.",
         )
 
     pinned_set = {mcr for mcr in pinned_mcrs if mcr}
-    history = latest_api_response.get("resident_history") or []
+    history = previous_response.get("resident_history") or []
     resident_history = [
         copy.deepcopy(row)
         for row in history
@@ -668,18 +676,12 @@ def build_pinned_run_input(
     for assignments in pinned_assignments.values():
         assignments.sort(key=lambda item: item["month_block"])
 
-    base_weightages = (
-        (latest_api_response.get("weightages") or {})
-        or (latest_inputs.get("weightages") if latest_inputs else {})
-        or {}
-    )
+    base_weightages = previous_response.get("weightages") or {}
     weightages = parse_weightages(weightages_override, base_weightages)
 
     def merged(key: str) -> List[Dict[str, Any]]:
-        if latest_api_response and key in latest_api_response:
-            return copy.deepcopy(latest_api_response.get(key) or [])
-        if latest_inputs and key in latest_inputs:
-            return copy.deepcopy(latest_inputs.get(key) or [])
+        if previous_response and key in previous_response:
+            return copy.deepcopy(previous_response.get(key) or [])
         return []
 
     base_leaves = merged("resident_leaves")
@@ -712,7 +714,7 @@ def build_pinned_run_input(
         "balancing_deviations": balancing_deviations,
         "resident_leaves": list(deduped_leaves.values()),
         "pinned_assignments": pinned_assignments,
-        "max_time_in_minutes": max_time_in_minutes,
+        "max_time_in_minutes": parse_max_time_in_minutes(max_time_in_minutes),
     }
 
 
