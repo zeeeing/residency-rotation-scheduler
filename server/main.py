@@ -56,6 +56,7 @@ def _build_postprocess_payload(
         ),
         "postings": _deepcopy(base_input.get("postings") or []),
         "weightages": _deepcopy(base_input.get("weightages") or {}),
+        "balancing_deviations": _deepcopy(base_input.get("balancing_deviations") or {}),
         "resident_leaves": _deepcopy(base_input.get("resident_leaves") or []),
         "solver_solution": solver_solution,
     }
@@ -86,6 +87,7 @@ async def solve(request: Request):
             resident_sr_preferences=solver_payload["resident_sr_preferences"],
             postings=solver_payload["postings"],
             weightages=solver_payload["weightages"],
+            balancing_deviations=solver_payload["balancing_deviations"],
             resident_leaves=solver_payload.get("resident_leaves", []),
             pinned_assignments=solver_payload.get("pinned_assignments", []),
             max_time_in_minutes=solver_payload.get("max_time_in_minutes"),
@@ -143,7 +145,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
     validation_payload = {
         "resident_mcr": resident_mcr,
         "current_year": [
-            {"month_block": entry["month_block"], "posting_code": entry["posting_code"]}
+            {"month_block": entry["month_block"], "posting_code": entry["posting_code"], "is_leave": entry["is_leave"]}
             for entry in current_year
         ],
         "residents": store_snapshot.get("residents") or [],
@@ -191,6 +193,12 @@ async def save(payload: Dict[str, Any] = Body(...)):
         or {}
     )
 
+    balancing_deviations = _deepcopy(
+        store_snapshot.get("balancing_deviations")
+        or (store.latest_inputs or {}).get("balancing_deviations")
+        or {}
+    )
+
     updated_payload = {
         "residents": residents,
         "resident_history": filtered_history + new_entries,
@@ -198,6 +206,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
         "resident_sr_preferences": store_snapshot.get("resident_sr_preferences") or [],
         "postings": store_snapshot.get("postings") or [],
         "weightages": weightages,
+        "balancing_deviations": balancing_deviations,
         "resident_leaves": store_snapshot.get("resident_leaves") or [],
     }
 

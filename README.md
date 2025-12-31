@@ -31,7 +31,7 @@ Upload CSVs via the UI (or POST `/api/solve` as multipart form data). Required h
 - Residents: `mcr`, `name`, `resident_year`, `career_blocks_completed`.
 - Resident History: `mcr`, `year`, `month_block`, `career_block`, `posting_code`, `is_current_year`, `is_leave`, `leave_type`. Use `is_leave=1` rows to record leave; set `posting_code` only if leave consumes a posting slot.
 - Preferences: `mcr`, `preference_rank`, `posting_code`, `resident_sr_preferences` (optional per row). SR bases already completed are dropped at solve time; if the planning year includes career blocks 28–30, elective SR bases must also appear in elective preferences. If a base is chosen as SR, its postings are forbidden outside career blocks 19–30 (except GM, which requires at least three blocks in 19–30).
-- Postings: `posting_code`, `posting_name`, `posting_type`, `max_residents`, `required_block_duration`.
+- Postings: `posting_code`, `posting_type`, `max_residents`, `required_block_duration`.
 
 Additional inputs:
 

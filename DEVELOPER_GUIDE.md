@@ -126,7 +126,7 @@ Can be viewed at http://127.0.0.1:8000/docs
 - Residents: `mcr`, `name`, `resident_year`, `career_blocks_completed`.
 - Resident History: `mcr`, `year`, `month_block` (1–12), `career_block`, `posting_code`, `is_current_year`, `is_leave`, `leave_type` (use `is_leave=1` rows for leave entries).
 - Preferences: `mcr`, `preference_rank`, `posting_code`, `resident_sr_preferences` (optional per row).
-- Postings: `posting_code`, `posting_name`, `posting_type` (`core`/`elective`), `max_residents`, `required_block_duration`.
+- Postings: `posting_code`, `posting_type` (`core`/`elective`), `max_residents`, `required_block_duration`.
 
 ## Data Structure of helpers in `posting_allocator.py`
 
@@ -140,7 +140,6 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   ```
   posting_info[posting_code] = {
     "posting_code": str,
-    "posting_name": str,
     "posting_type": str,
     "max_residents": int,
     "required_block_duration": int
@@ -151,7 +150,6 @@ Refer to `# HELPERS` section of the code in [`server/services/posting_allocator.
   posting_info = {
     "GM (TTSH)": {
         "posting_code": "GM (TTSH)",
-        "posting_name": "General Medicine (TTSH)",
         "posting_type": "core",
         "max_residents": 5,
         "required_block_duration": 1

@@ -83,7 +83,8 @@ const OverviewPage: React.FC = () => {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
-      a.download = "timetable_assignments.csv";
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `generated_timetable_${timestamp}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

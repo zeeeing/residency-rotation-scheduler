@@ -361,6 +361,7 @@ def compute_postprocess(payload: Dict) -> Dict:
         "resident_sr_preferences": resident_sr_preferences,
         "postings": postings,
         "weightages": weightages,
+        "balancing_deviations": balancing_deviations,
         "statistics": {
             "total_residents": len(residents),
             "cohort": cohort_statistics,
