@@ -35,6 +35,8 @@ interface PostingBalancingDeviationSelectorProps {
 }
 
 const MAX_THRESHOLD = 15;
+const DEFAULT_PREFIXES = ["ED", "GRM", "GM"];
+const DEFAULT_DEVIATION = 4;
 
 const PostingBalancingDeviationSelector: React.FC<
   PostingBalancingDeviationSelectorProps
@@ -55,6 +57,22 @@ const PostingBalancingDeviationSelector: React.FC<
     setValue({ ...value, [selectedPosting]: threshold });
     setSelectedPosting(null);
     setThreshold(1);
+  };
+
+  const handleAddDefaultDeviations = (): void => {
+    const next = { ...value };
+
+    postings.forEach((posting) => {
+      const matchesPrefix = DEFAULT_PREFIXES.some((prefix) =>
+        posting.startsWith(prefix)
+      );
+
+      if (matchesPrefix && !(posting in next)) {
+        next[posting] = DEFAULT_DEVIATION;
+      }
+    });
+
+    setValue(next);
   };
 
   const handleUpdate =
@@ -154,6 +172,21 @@ const PostingBalancingDeviationSelector: React.FC<
               </Button>
             </div>
 
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddDefaultDeviations}
+                >
+                  Add defaults for ED / GRM / GM
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Adds deviation = 4 for postings starting with ED, GRM, or GM
+              </TooltipContent>
+            </Tooltip>
+            
             {/* configured list */}
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 mt-4 pr-1">
               {configuredPostings.length === 0 && (
