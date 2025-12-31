@@ -30,32 +30,58 @@ CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
         "aliases": {"is_current_year": ["isCurrentYear"], "is_leave": ["isLeave"]},
     },
     "resident_preferences": {
-        "label": "Resident Preferences CSV",
-        "required": ["mcr", "preference_rank", "posting_code"],
-        "aliases": {},
-    },
-    "resident_sr_preferences": {
-        "label": "SR Preferences CSV",
-        "required": ["mcr", "preference_rank", "base_posting"],
+        "label": "Preferences CSV",
+        "required": [
+            "mcr",
+            "preference_rank",
+            "posting_code",
+            "resident_sr_preferences",
+        ],
         "aliases": {},
     },
     "postings": {
         "label": "Postings CSV",
         "required": [
             "posting_code",
-            "posting_name",
             "posting_type",
             "max_residents",
             "required_block_duration",
         ],
         "aliases": {},
     },
-    "resident_leaves": {
-        "label": "Resident Leaves CSV",
-        "required": ["mcr", "month_block", "leave_type", "posting_code"],
-        "aliases": {},
-    },
 }
+
+
+SR_PREFERENCE_ALIASES: Dict[str, str] = {
+    # aliases mapped to canonical base names.
+    "Cardio": "CVM",
+    "Endocrine": "Endocrine",
+    "Gastro": "Gastro",
+    "AIM": "GM",
+    "GRM": "GRM",
+    "Haemato": "Haemato",
+    "ID": "ID",
+    "Med Onco": "Med Onco",
+    "Pall Med": "PMD",
+    "RAI": "RAI",
+    "Respi": "RCCM",
+    "Respi": "MICU",
+    "Rehab": "Rehab",
+    "Renal": "Renal",
+    "Neuro": "NL",
+    "Derm": "Derm",
+    "Unsure": "",
+    "Gap Year": "",
+}
+
+
+def _normalise_sr_preference(value: Any) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    base = cleaned.split(" (")[0].strip()
+    canonical = SR_PREFERENCE_ALIASES.get(base.lower())
+    return canonical or base
 
 
 def _sanitise_header(value: Any) -> str:
@@ -176,6 +202,29 @@ def parse_weightages(
     merged.update(data or {})
     return merged
 
+def parse_balancing_deviations(
+    raw: Any, fallback: Optional[Dict[str, int]] = None
+) -> Dict[str, int]:
+    fallback = {**(fallback or {})}
+    if raw is None:
+        return fallback
+    try:
+        if isinstance(raw, str) and raw.strip():
+            data = json.loads(raw)
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            data = {}
+    except json.JSONDecodeError:
+        data = {}
+    merged = fallback.copy()
+    merged.update({
+        k: int(v)
+        for k, v in (data or {}).items()
+        if isinstance(k, str)
+    })
+    return merged
+
 
 def parse_pinned_list(raw: Any) -> List[str]:
     if raw is None:
@@ -278,6 +327,28 @@ def _format_resident_history(records: List[Dict[str, Any]]) -> List[Dict[str, An
     return formatted
 
 
+def _derive_resident_leaves_from_history(
+    resident_history: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    derived: List[Dict[str, Any]] = []
+    for row in resident_history:
+        if not row.get("is_leave") or not row.get("is_current_year"):
+            continue
+        mcr = str(row.get("mcr") or "").strip()
+        month_block = parse_int(row.get("month_block"))
+        if not mcr or month_block is None:
+            continue
+        derived.append(
+            {
+                "mcr": mcr,
+                "month_block": month_block,
+                "leave_type": str(row.get("leave_type") or "").strip(),
+                "posting_code": str(row.get("posting_code") or "").strip(),
+            }
+        )
+    return derived
+
+
 def _format_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
@@ -294,10 +365,12 @@ def _format_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return formatted
 
 
-def _format_sr_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _format_sr_preferences_from_preferences(
+    records: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
-        base_posting = str(row.get("base_posting") or "").strip()
+        base_posting = _normalise_sr_preference(row.get("resident_sr_preferences"))
         if not base_posting:
             continue
         formatted.append(
@@ -324,27 +397,9 @@ def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted.append(
             {
                 "posting_code": str(row.get("posting_code") or "").strip(),
-                "posting_name": str(row.get("posting_name") or "").strip(),
                 "posting_type": str(row.get("posting_type") or "").strip(),
                 "max_residents": max_residents,
                 "required_block_duration": required_block_duration,
-            }
-        )
-    return formatted
-
-
-def _format_resident_leaves(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    formatted: List[Dict[str, Any]] = []
-    for row in records:
-        month_block = parse_int(row.get("month_block"))
-        if month_block is None:
-            continue
-        formatted.append(
-            {
-                "mcr": str(row.get("mcr") or "").strip(),
-                "month_block": month_block,
-                "leave_type": str(row.get("leave_type") or "").strip(),
-                "posting_code": str(row.get("posting_code") or "").strip(),
             }
         )
     return formatted
@@ -475,9 +530,7 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
     residents_upload = require_upload("residents")
     history_upload = require_upload("resident_history")
     prefs_upload = require_upload("resident_preferences")
-    sr_prefs_upload = require_upload("resident_sr_preferences")
     postings_upload = require_upload("postings")
-    leaves_upload = require_upload("resident_leaves", optional=True)
 
     residents_csv = await _read_csv_upload(
         residents_upload,
@@ -497,44 +550,25 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
         file_label=CSV_HEADER_SPECS["resident_preferences"]["label"],
         header_aliases=CSV_HEADER_SPECS["resident_preferences"]["aliases"],
     )
-    sr_prefs_csv = (
-        await _read_csv_upload(
-            sr_prefs_upload,
-            expected_headers=CSV_HEADER_SPECS["resident_sr_preferences"]["required"],
-            file_label=CSV_HEADER_SPECS["resident_sr_preferences"]["label"],
-            header_aliases=CSV_HEADER_SPECS["resident_sr_preferences"]["aliases"],
-        )
-        if sr_prefs_upload
-        else []
-    )
     postings_csv = await _read_csv_upload(
         postings_upload,
         expected_headers=CSV_HEADER_SPECS["postings"]["required"],
         file_label=CSV_HEADER_SPECS["postings"]["label"],
         header_aliases=CSV_HEADER_SPECS["postings"]["aliases"],
     )
-    leaves_csv = (
-        await _read_csv_upload(
-            leaves_upload,
-            expected_headers=CSV_HEADER_SPECS["resident_leaves"]["required"],
-            file_label=CSV_HEADER_SPECS["resident_leaves"]["label"],
-            header_aliases=CSV_HEADER_SPECS["resident_leaves"]["aliases"],
-        )
-        if leaves_upload
-        else []
-    )
-
     residents = _format_residents(residents_csv)
     resident_history = _format_resident_history(history_csv)
     resident_preferences = _format_preferences(prefs_csv)
-    resident_sr_preferences = _format_sr_preferences(sr_prefs_csv)
+    resident_sr_preferences = _format_sr_preferences_from_preferences(prefs_csv)
     postings = _format_postings(postings_csv)
-    resident_leaves = _format_resident_leaves(leaves_csv)
+    resident_leaves = _derive_resident_leaves_from_history(resident_history)
 
     _validate_no_duplicate_mcrs(residents)
     _validate_no_duplicate_posting_codes(postings)
     _validate_posting_capacity_and_duration(postings)
 
+    balancing_deviations = parse_balancing_deviations(form.get("balancing_deviations"), {})
+    print(f"balancing_deviations in preprocess_initial_upload {balancing_deviations}")
     weightages = parse_weightages(form.get("weightages"), {})
     max_time_in_minutes = parse_max_time_in_minutes(form.get("max_time_in_minutes"))
 
@@ -545,6 +579,7 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
         "resident_sr_preferences": resident_sr_preferences,
         "postings": postings,
         "weightages": weightages,
+        "balancing_deviations": balancing_deviations,
         "resident_leaves": resident_leaves,
         "max_time_in_minutes": max_time_in_minutes,
     }
@@ -578,6 +613,7 @@ async def prepare_solver_input(form: FormData) -> Dict[str, Any]:
             previous_response=previous_response,
             pinned_mcrs=pinned_mcrs,
             weightages_override=form.get("weightages"),
+            balancing_deviations=form.get("balancing_deviations"),
             max_time_in_minutes=form.get("max_time_in_minutes"),
         )
     else:
@@ -590,6 +626,7 @@ def build_pinned_run_input(
     previous_response: Optional[Dict[str, Any]],
     pinned_mcrs: List[str],
     weightages_override: Any = None,
+    balancing_deviations: Any = None,
     max_time_in_minutes: Any = None,
 ) -> Dict[str, Any]:
     """
@@ -674,6 +711,7 @@ def build_pinned_run_input(
         "resident_sr_preferences": merged("resident_sr_preferences"),
         "postings": merged("postings"),
         "weightages": weightages,
+        "balancing_deviations": balancing_deviations,
         "resident_leaves": list(deduped_leaves.values()),
         "pinned_assignments": pinned_assignments,
         "max_time_in_minutes": parse_max_time_in_minutes(max_time_in_minutes),
@@ -689,13 +727,15 @@ def normalise_current_year_entries(entries: Any) -> List[Dict[str, Any]]:
             continue
         month_block = parse_int(entry.get("month_block"))
         posting_code = str(entry.get("posting_code") or "").strip()
-        if month_block is None or not posting_code:
+        is_leave = str(entry.get("is_leave"))
+        if month_block is None or not posting_code or is_leave is None:
             continue
         career_block = parse_int(entry.get("career_block"))
         normalised.append(
             {
                 "month_block": month_block,
                 "posting_code": posting_code,
+                "is_leave": is_leave,
                 "career_block": career_block,
             }
         )

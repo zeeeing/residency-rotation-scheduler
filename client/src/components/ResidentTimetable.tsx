@@ -1,39 +1,39 @@
 import {
-    DndContext,
-    type DragEndEvent,
-    PointerSensor,
-    useSensor,
-    useSensors,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
 } from "@dnd-kit/core";
 import {
-    restrictToFirstScrollableAncestor,
-    restrictToHorizontalAxis,
-    restrictToWindowEdges,
+  restrictToFirstScrollableAncestor,
+  restrictToHorizontalAxis,
+  restrictToWindowEdges,
 } from "@dnd-kit/modifiers";
 import {
-    SortableContext,
-    horizontalListSortingStrategy,
+  SortableContext,
+  horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import {
-    CCR_POSTINGS,
-    CORE_REQUIREMENTS,
-    ELECTIVE_REQUIREMENT,
-    monthLabels,
+  CCR_POSTINGS,
+  CORE_REQUIREMENTS,
+  ELECTIVE_REQUIREMENT,
+  monthLabels,
 } from "@/lib/constants";
 import type { AcademicYearRange } from "@/lib/utils";
 import {
-    areSchedulesEqual,
-    cn,
-    formatAcademicYearLabel,
-    moveByInsert,
+  areSchedulesEqual,
+  cn,
+  formatAcademicYearLabel,
+  moveByInsert,
 } from "@/lib/utils";
 import type { Posting, Resident, ResidentHistory, Warning } from "../types";
 
@@ -45,29 +45,29 @@ import ErrorAlert from "./ErrorAlert";
 import SortableBlockCell from "./SortableBlockCell";
 
 import {
-    ChevronLeft,
-    ChevronRight,
-    Info,
-    InfoIcon,
-    Loader2Icon,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  InfoIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
-    Card,
-    CardAction,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "./ui/card";
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "./ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
@@ -377,10 +377,13 @@ const ResidentTimetable: React.FC<Props> = ({
       const current_year = Array.from({ length: 12 }, (_, i) => {
         const month_block = i + 1;
         const assignment = currentYearBlockPostings[month_block];
-        return assignment?.posting_code
-          ? { month_block, posting_code: assignment.posting_code }
-          : null;
-      }).filter(Boolean) as { month_block: number; posting_code: string }[];
+        if (!assignment) return null;
+        return { 
+          month_block, 
+          posting_code: assignment.posting_code ?? null, 
+          is_leave: assignment.is_leave ?? false
+        }
+      }).filter(Boolean) as { month_block: number; posting_code: string; is_leave: boolean }[];
 
       const updatedApi = await saveSchedule({
         resident_mcr: resident.mcr,
@@ -391,15 +394,13 @@ const ResidentTimetable: React.FC<Props> = ({
       setWarnings([]); // clear alerts on successful save
     } catch (err: any) {
       const validationWarnings = err?.response?.data?.warnings;
-      if (
-        Array.isArray(validationWarnings) &&
-        validationWarnings.length > 0
-      ) {
+      if (Array.isArray(validationWarnings) && validationWarnings.length > 0) {
         setWarnings(validationWarnings);
         return;
       }
       const statusCode = err?.response?.status;
-      const msg = err?.response?.data?.detail || "An error occurred while saving.";
+      const msg =
+        err?.response?.data?.detail || "An error occurred while saving.";
       setWarnings([{ code: `ERR ${statusCode}`, description: msg }]);
     } finally {
       setIsSaving(false);
@@ -647,9 +648,7 @@ const ResidentTimetable: React.FC<Props> = ({
           {warnings.length > 0 ? (
             <ErrorAlert
               message="Warnings"
-              description={warnings.map(
-                (v) => `[${v.code}] ${v.description}`
-              )}
+              description={warnings.map((v) => `[${v.code}] ${v.description}`)}
               variantType="destructive"
             />
           ) : (
