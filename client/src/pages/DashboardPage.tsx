@@ -304,9 +304,8 @@ const HomePage: React.FC = () => {
           variant="secondary"
           onClick={generateSampleCSV}
           className="cursor-pointer"
-          disabled
         >
-          Download Sample CSV (Coming Soon)
+          Download Sample CSV
         </Button>
       </div>
 
