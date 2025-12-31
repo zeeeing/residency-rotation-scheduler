@@ -145,7 +145,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
     validation_payload = {
         "resident_mcr": resident_mcr,
         "current_year": [
-            {"month_block": entry["month_block"], "posting_code": entry["posting_code"]}
+            {"month_block": entry["month_block"], "posting_code": entry["posting_code"], "is_leave": entry["is_leave"]}
             for entry in current_year
         ],
         "residents": store_snapshot.get("residents") or [],

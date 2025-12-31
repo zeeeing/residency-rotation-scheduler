@@ -695,13 +695,15 @@ def normalise_current_year_entries(entries: Any) -> List[Dict[str, Any]]:
             continue
         month_block = parse_int(entry.get("month_block"))
         posting_code = str(entry.get("posting_code") or "").strip()
-        if month_block is None or not posting_code:
+        is_leave = str(entry.get("is_leave"))
+        if month_block is None or not posting_code or is_leave is None:
             continue
         career_block = parse_int(entry.get("career_block"))
         normalised.append(
             {
                 "month_block": month_block,
                 "posting_code": posting_code,
+                "is_leave": is_leave,
                 "career_block": career_block,
             }
         )

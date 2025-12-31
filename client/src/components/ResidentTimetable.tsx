@@ -376,10 +376,13 @@ const ResidentTimetable: React.FC<Props> = ({
       const current_year = Array.from({ length: 12 }, (_, i) => {
         const month_block = i + 1;
         const assignment = currentYearBlockPostings[month_block];
-        return assignment?.posting_code
-          ? { month_block, posting_code: assignment.posting_code }
-          : null;
-      }).filter(Boolean) as { month_block: number; posting_code: string }[];
+        if (!assignment) return null;
+        return { 
+          month_block, 
+          posting_code: assignment.posting_code ?? null, 
+          is_leave: assignment.is_leave ?? false
+        }
+      }).filter(Boolean) as { month_block: number; posting_code: string; is_leave: boolean }[];
 
       const updatedApi = await saveSchedule({
         resident_mcr: resident.mcr,
