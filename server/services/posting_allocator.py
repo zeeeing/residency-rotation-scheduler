@@ -1618,7 +1618,7 @@ def allocate_timetable(
             "resident_sr_preferences": resident_sr_preferences,
             "postings": postings,
             "weightages": weightages,
-            "balancing_deviations": balancing_deviation,
+            "balancing_deviations": balancing_deviations,
             "resident_leaves": resident_leaves or [],
             "solver_solution": {
                 "entries": solution_entries,
