@@ -63,7 +63,6 @@ export interface ResidentSrPreference {
 
 export interface Posting {
   posting_code: string;
-  posting_name: string;
   posting_type: string;
   max_residents: number;
   required_block_duration: number;
@@ -106,9 +105,7 @@ export interface CsvFilesState {
   residents: File | null;
   resident_history: File | null;
   resident_preferences: File | null;
-  resident_sr_preferences: File | null;
   postings: File | null;
-  resident_leaves?: File | null;
 }
 
 // generation of sample csv

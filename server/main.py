@@ -48,7 +48,7 @@ app.add_middleware(
 )
 
 
-# helpter functions for deepcopy and building postprocess payload
+# helper functions for deepcopy and building postprocess payload
 def _deepcopy(value: Any) -> Any:
     return copy.deepcopy(value)
 
@@ -65,6 +65,7 @@ def _build_postprocess_payload(
         ),
         "postings": _deepcopy(base_input.get("postings") or []),
         "weightages": _deepcopy(base_input.get("weightages") or {}),
+        "balancing_deviations": _deepcopy(base_input.get("balancing_deviations") or {}),
         "resident_leaves": _deepcopy(base_input.get("resident_leaves") or []),
         "solver_solution": solver_solution,
     }
@@ -94,6 +95,7 @@ async def solve(request: Request):
             resident_sr_preferences=solver_payload["resident_sr_preferences"],
             postings=solver_payload["postings"],
             weightages=solver_payload["weightages"],
+            balancing_deviations=solver_payload["balancing_deviations"],
             resident_leaves=solver_payload.get("resident_leaves", []),
             pinned_assignments=solver_payload.get("pinned_assignments", []),
             max_time_in_minutes=solver_payload.get("max_time_in_minutes"),
@@ -184,7 +186,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
     validation_payload = {
         "resident_mcr": resident_mcr,
         "current_year": [
-            {"month_block": entry["month_block"], "posting_code": entry["posting_code"]}
+            {"month_block": entry["month_block"], "posting_code": entry["posting_code"], "is_leave": entry["is_leave"]}
             for entry in current_year
         ],
         "residents": context.get("residents") or [],
@@ -227,6 +229,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
         )
 
     weightages = _deepcopy(context.get("weightages") or {})
+    balancing_deviations = _deepcopy(context.get("balancing_deviations") or {})
 
     updated_payload = {
         "residents": residents,
@@ -235,6 +238,7 @@ async def save(payload: Dict[str, Any] = Body(...)):
         "resident_sr_preferences": context.get("resident_sr_preferences") or [],
         "postings": context.get("postings") or [],
         "weightages": weightages,
+        "balancing_deviations": balancing_deviations,
         "resident_leaves": context.get("resident_leaves") or [],
     }
 

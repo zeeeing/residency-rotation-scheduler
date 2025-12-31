@@ -117,7 +117,7 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
             <PopoverContent className="w-[260px] p-0">
               <Command>
                 <div className="flex justify-between items-center pr-2">
-                  <CommandInput placeholder="Search by code or name..." />
+                  <CommandInput placeholder="Search by code or type..." />
                   <Button
                     type="button"
                     size="icon"
@@ -160,8 +160,7 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
                     const renderItem = (p: Posting) => (
                       <CommandItem
                         key={p.posting_code}
-                        // include name in value to allow searching by name as well
-                        value={`${p.posting_code} ${p.posting_name}`}
+                        value={`${p.posting_code} ${p.posting_type}`}
                         onSelect={(_) => {
                           onSelectPosting?.(p.posting_code);
                           setOpen(false);
@@ -178,7 +177,9 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
                         <div className="flex flex-col">
                           <span className="font-medium">{p.posting_code}</span>
                           <span className="text-xs text-muted-foreground">
-                            {p.posting_name}
+                            {p.posting_type
+                              ? p.posting_type.toUpperCase()
+                              : "UNKNOWN"}
                           </span>
                         </div>
                       </CommandItem>
