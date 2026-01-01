@@ -2,7 +2,7 @@ import Papa from "papaparse";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import React, { useEffect, useMemo, useState } from "react";
-import { solve, checkDbStatus, getLatestSession } from "../api/api";
+import { solve } from "../api/api";
 import type {
   ApiResponse,
   CsvFilesState,
@@ -17,7 +17,6 @@ import PostingBalancingDeviationSelector from "@/components/PostingBalancingDevi
 import PostingUtilTable from "../components/PostingUtilTable";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
-import { SessionManager } from "../components/SessionManager";
 import WeightageSelector from "../components/WeightageSelector";
 import { generateSampleCSV } from "../lib/generateSampleCSV";
 
@@ -72,31 +71,6 @@ const HomePage: React.FC = () => {
         return "";
       }
     });
-  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
-  const [isDbAvailable, setIsDbAvailable] = useState<boolean>(false);
-
-  useEffect(() => {
-    checkDbStatus()
-      .then((status) => {
-        setIsDbAvailable(status.available);
-        if (status.available) {
-          getLatestSession()
-            .then((result) => {
-              if (result.session) {
-                setApiResponse(result.session.api_response);
-                if (result.session.api_response.residents?.length) {
-                  setSelectedResidentMcr(result.session.api_response.residents[0].mcr);
-                }
-                if (result.session.academic_year) {
-                  setCurrentAcademicYearInput(result.session.academic_year);
-                }
-              }
-            })
-            .catch(() => {});
-        }
-      })
-      .catch(() => setIsDbAvailable(false));
-  }, []);
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
@@ -151,39 +125,17 @@ const HomePage: React.FC = () => {
     formData.append("balancing_deviations", JSON.stringify(postingDeviation));
     formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
     formData.append("max_time_in_minutes", maxTimeInMinutes.toString());
-    
-    // For pinned runs, include previous response so backend can use it (stateless)
-    if (pinnedMcrs.size > 0 && apiResponse) {
-      formData.append("previous_response", JSON.stringify(apiResponse));
-    }
-    
-    // Pass academic year for session naming
-    if (currentAcademicYearInput) {
-      formData.append("academic_year", currentAcademicYearInput);
-    }
 
     try {
-      const json: ApiResponse & { saved_session_id?: number } = await solve(formData);
-      console.log("API Response:", json);
+      const json: ApiResponse = await solve(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
-        
-        // Server auto-saves to database, use the returned session ID
-        if (json.saved_session_id) {
-          setCurrentSessionId(json.saved_session_id);
-        }
-      } else {
-        setError(
-          `Server returned success=${json?.success}, residents count=${json?.residents?.length ?? 0}`
-        );
       }
     } catch (err: any) {
-      console.error("API Error:", err);
-      const errorMessage = 
+      setError(
         err?.response?.data?.detail ||
-        err?.message ||
-        "An error occurred while processing the files.";
-      setError(errorMessage);
+          "An error occurred while processing the files."
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -388,24 +340,6 @@ const HomePage: React.FC = () => {
         >
           Download Sample CSV
         </Button>
-        {isDbAvailable && (
-          <SessionManager
-            apiResponse={apiResponse}
-            currentSessionId={currentSessionId}
-            academicYear={currentAcademicYearInput}
-            onSessionLoaded={(response, sessionId) => {
-              setApiResponse(response);
-              setCurrentSessionId(sessionId);
-              setPinnedMcrs(new Set());
-              if (response.residents?.length) {
-                setSelectedResidentMcr(response.residents[0].mcr);
-              }
-            }}
-            onSessionSaved={(sessionId) => {
-              setCurrentSessionId(sessionId);
-            }}
-          />
-        )}
       </div>
 
       {/* Error Message */}
