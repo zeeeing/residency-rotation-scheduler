@@ -1,10 +1,17 @@
 import copy
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
+from server.database import get_db, init_db, is_db_available
+from server.models import SolverSession
 from server.services.posting_allocator import allocate_timetable
 from server.services.postprocess import compute_postprocess
 from server.services.preprocessing import (
@@ -15,24 +22,26 @@ from server.services.validate import validate_assignment
 from server.utils import MONTH_LABELS
 
 
-# define a store class for local storage of latest inputs and API response
-class Store:
-    def __init__(self) -> None:
-        self.latest_inputs: Optional[Dict[str, Any]] = None
-        self.latest_api_response: Optional[Dict[str, Any]] = None
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
 
 
-# instantiate the store and FastAPI app
-store = Store()
-app = FastAPI(title="R2S API")
+app = FastAPI(title="R2S API", lifespan=lifespan)
 
 # configure CORS middleware
+# Allow localhost for development and Replit domains for preview/deployment
 origins = [
     "http://localhost:5173",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://0.0.0.0:5000",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://.*\.(replit\.dev|repl\.co)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,15 +77,14 @@ async def solve(request: Request):
     try:
         # parse form data
         form = await request.form()
+        
+        # extract academic year for session naming
+        academic_year = None
+        if "academic_year" in form:
+            academic_year = str(form["academic_year"]).strip() or None
 
-        # prepare solver input
-        solver_input, latest_inputs_snapshot = await prepare_solver_input(
-            form=form,
-            latest_inputs=store.latest_inputs,
-            latest_api_response=store.latest_api_response,
-        )
-        if latest_inputs_snapshot is not None:
-            store.latest_inputs = latest_inputs_snapshot
+        # prepare solver input (stateless - client provides previous context if needed)
+        solver_input = await prepare_solver_input(form=form)
         solver_payload = _deepcopy(solver_input)
 
         # call the posting allocator
@@ -116,8 +124,36 @@ async def solve(request: Request):
                 detail=final_result.get("error", "Postprocess failed"),
             )
 
-        # store the latest API response
-        store.latest_api_response = _deepcopy(final_result)
+        # Auto-save to database if available
+        saved_session_id = None
+        if is_db_available():
+            try:
+                from datetime import datetime
+                from server.database import SessionLocal
+                
+                db = SessionLocal()
+                try:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session_name = f"AY{academic_year} - {timestamp}" if academic_year else f"Session - {timestamp}"
+                    
+                    new_session = SolverSession(
+                        name=session_name,
+                        academic_year=academic_year,
+                        api_response=final_result,
+                    )
+                    db.add(new_session)
+                    db.commit()
+                    db.refresh(new_session)
+                    saved_session_id = new_session.id
+                finally:
+                    db.close()
+            except Exception as save_err:
+                print(f"Auto-save failed: {save_err}")
+
+        # Include session_id in response if saved
+        if saved_session_id:
+            final_result["saved_session_id"] = saved_session_id
+
         return final_result
     except HTTPException:
         raise
@@ -129,15 +165,20 @@ async def solve(request: Request):
 
 @app.post("/api/save")
 async def save(payload: Dict[str, Any] = Body(...)):
+    """
+    Save manual edits to a resident's schedule.
+    Stateless: client must provide the full context (previous API response).
+    """
     resident_mcr = str(payload.get("resident_mcr") or "").strip()
     if not resident_mcr:
         raise HTTPException(status_code=400, detail="missing resident_mcr")
 
-    store_snapshot = store.latest_api_response or store.latest_inputs
-    if not store_snapshot:
+    # Client must provide the full context from previous API response
+    context = payload.get("context") or {}
+    if not context.get("residents") or not context.get("postings"):
         raise HTTPException(
             status_code=400,
-            detail="No dataset loaded. Upload CSV and run optimiser first.",
+            detail="Missing context. Please provide the full API response context.",
         )
 
     current_year = normalise_current_year_entries(payload.get("current_year") or [])
@@ -148,17 +189,17 @@ async def save(payload: Dict[str, Any] = Body(...)):
             {"month_block": entry["month_block"], "posting_code": entry["posting_code"], "is_leave": entry["is_leave"]}
             for entry in current_year
         ],
-        "residents": store_snapshot.get("residents") or [],
-        "resident_history": store_snapshot.get("resident_history") or [],
-        "postings": store_snapshot.get("postings") or [],
+        "residents": context.get("residents") or [],
+        "resident_history": context.get("resident_history") or [],
+        "postings": context.get("postings") or [],
     }
 
     validation_result = validate_assignment(validation_payload)
     if not validation_result.get("success"):
         return JSONResponse(status_code=400, content=validation_result)
 
-    residents = _deepcopy(store_snapshot.get("residents") or [])
-    resident_history = _deepcopy(store_snapshot.get("resident_history") or [])
+    residents = _deepcopy(context.get("residents") or [])
+    resident_history = _deepcopy(context.get("resident_history") or [])
 
     filtered_history = [
         row
@@ -187,27 +228,18 @@ async def save(payload: Dict[str, Any] = Body(...)):
             }
         )
 
-    weightages = _deepcopy(
-        store_snapshot.get("weightages")
-        or (store.latest_inputs or {}).get("weightages")
-        or {}
-    )
-
-    balancing_deviations = _deepcopy(
-        store_snapshot.get("balancing_deviations")
-        or (store.latest_inputs or {}).get("balancing_deviations")
-        or {}
-    )
+    weightages = _deepcopy(context.get("weightages") or {})
+    balancing_deviations = _deepcopy(context.get("balancing_deviations") or {})
 
     updated_payload = {
         "residents": residents,
         "resident_history": filtered_history + new_entries,
-        "resident_preferences": store_snapshot.get("resident_preferences") or [],
-        "resident_sr_preferences": store_snapshot.get("resident_sr_preferences") or [],
-        "postings": store_snapshot.get("postings") or [],
+        "resident_preferences": context.get("resident_preferences") or [],
+        "resident_sr_preferences": context.get("resident_sr_preferences") or [],
+        "postings": context.get("postings") or [],
         "weightages": weightages,
         "balancing_deviations": balancing_deviations,
-        "resident_leaves": store_snapshot.get("resident_leaves") or [],
+        "resident_leaves": context.get("resident_leaves") or [],
     }
 
     result = compute_postprocess(updated_payload)
@@ -216,7 +248,6 @@ async def save(payload: Dict[str, Any] = Body(...)):
             status_code=500, detail=result.get("error", "Postprocess failed")
         )
 
-    store.latest_api_response = _deepcopy(result)
     return result
 
 
@@ -279,3 +310,144 @@ async def download_csv(payload: Dict[str, Any] = Body(...)):
             "Content-Disposition": 'attachment; filename="final_timetable.csv"',
         },
     )
+
+
+@app.get("/api/db-status")
+async def db_status():
+    """Check if database is available for session persistence."""
+    return {"available": is_db_available()}
+
+
+@app.get("/api/sessions")
+async def list_sessions(db: Session = Depends(get_db)):
+    """List all saved solver sessions (without full api_response data)."""
+    sessions = db.query(SolverSession).order_by(SolverSession.updated_at.desc()).all()
+    return {"sessions": [s.to_dict() for s in sessions]}
+
+
+@app.get("/api/sessions/latest")
+async def get_latest_session(db: Session = Depends(get_db)):
+    """Get the most recently updated session with full api_response data."""
+    session = db.query(SolverSession).order_by(SolverSession.updated_at.desc()).first()
+    if not session:
+        return {"session": None}
+    return {"session": session.to_full_dict()}
+
+
+@app.post("/api/sessions")
+async def create_session(payload: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
+    """Save a new solver session to the database."""
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Session name is required")
+    
+    api_response = payload.get("api_response")
+    if not api_response or not isinstance(api_response, dict):
+        raise HTTPException(status_code=400, detail="api_response is required")
+    
+    session = SolverSession(
+        name=name,
+        academic_year=str(payload.get("academic_year") or "").strip() or None,
+        api_response=api_response,
+        notes=str(payload.get("notes") or "").strip() or None,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    
+    return {"success": True, "session": session.to_dict()}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: int, db: Session = Depends(get_db)):
+    """Get a specific session with full api_response data."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session.to_full_dict()
+
+
+@app.put("/api/sessions/{session_id}")
+async def update_session(session_id: int, payload: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
+    """Update an existing session (name, notes, or api_response)."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if "name" in payload:
+        name = str(payload["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Session name cannot be empty")
+        session.name = name
+    
+    if "notes" in payload:
+        session.notes = str(payload["notes"]).strip() or None
+    
+    if "academic_year" in payload:
+        session.academic_year = str(payload["academic_year"]).strip() or None
+    
+    if "api_response" in payload:
+        api_response = payload["api_response"]
+        if not isinstance(api_response, dict):
+            raise HTTPException(status_code=400, detail="api_response must be a valid object")
+        session.api_response = api_response
+    
+    db.commit()
+    db.refresh(session)
+    
+    return {"success": True, "session": session.to_dict()}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: int, db: Session = Depends(get_db)):
+    """Delete a session."""
+    session = db.query(SolverSession).filter(SolverSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    db.delete(session)
+    db.commit()
+    
+    return {"success": True, "message": "Session deleted"}
+
+
+# Static files and SPA routing for production deployment
+_client_dist_path = Path(__file__).parent.parent / "client" / "dist"
+_assets_path = _client_dist_path / "assets"
+
+# Mount assets directory if it exists (for production)
+if _assets_path.exists() and _assets_path.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
+
+
+@app.get("/")
+async def serve_index():
+    """Serve the main index.html for the SPA."""
+    index_file = _client_dist_path / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"message": "R2S API", "docs": "/docs"}
+
+
+@app.get("/{path:path}")
+async def serve_static_or_spa(path: str):
+    """Serve static files or fallback to SPA index.html."""
+    # Skip API paths - they should 404 if not matched by explicit routes
+    if path.startswith("api"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # Check if client dist exists (production mode)
+    if not _client_dist_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Try to serve the exact file if it exists
+    file_path = _client_dist_path / path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    
+    # Fallback to index.html for SPA routing
+    index_file = _client_dist_path / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    
+    raise HTTPException(status_code=404, detail="Not found")
