@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file. Version numbers follow semantic versioning and dates use `YYYY-MM-DD`.
 
+## [1.0.1] - 2026-01-01
+
+### Added
+
+- Support for shared balancing quotas for specified postings (e.g., GRM and MedComm at TTSH).
+- SR preference mapping to ensure residents are allocated to their preferred SR supervisor.
+- Multi-select dropdown for postings with balancing deviations.
+- Button to set default deviations for ED, GRM, and GM postings.
+
+### Changed
+
+- Redesigned CSV ingestion workflow for improved validation and error handling.
+- Removed the now-redundant Optimisation Scorecard from the UI.
+- Updated documentation for constraints and developer onboarding.
+
+### Fixed
+
+- Resolved a bug in post-processing that affected timetable accuracy.
+- Corrected logic to exclude residents on leave from the assigned block count.
+- Addressed an issue with the end-of-year career-track constraint.
+
 ## [1.0.0] - 2025-12-16
 
 ### Added
