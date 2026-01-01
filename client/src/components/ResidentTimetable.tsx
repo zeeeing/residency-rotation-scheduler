@@ -370,6 +370,7 @@ const ResidentTimetable: React.FC<Props> = ({
   const handleSave = async () => {
     if (isSaving || !resident) return;
     if (!hasEdits) return;
+    if (!apiResponse) return;
 
     setIsSaving(true);
     try {
@@ -387,6 +388,7 @@ const ResidentTimetable: React.FC<Props> = ({
       const updatedApi = await saveSchedule({
         resident_mcr: resident.mcr,
         current_year,
+        context: apiResponse,
       });
       setApiResponse(updatedApi);
       setWarnings([]); // clear alerts on successful save
